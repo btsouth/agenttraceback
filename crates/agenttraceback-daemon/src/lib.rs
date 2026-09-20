@@ -195,18 +195,16 @@ pub fn read_runtime() -> Result<RuntimeMetadata, DaemonError> {
     Ok(paths.read_runtime_metadata()?)
 }
 
-/// Removes a stale runtime file after checking process existence on Unix.
+/// Removes stale runtime metadata only while holding the daemon instance lock.
 pub fn remove_stale_runtime() -> Result<bool, DaemonError> {
     let paths = PlatformPaths::discover()?;
     match paths.read_runtime_metadata() {
-        Ok(metadata) => {
-            #[cfg(unix)]
-            {
-                let proc_path = format!("/proc/{}", metadata.pid);
-                if Path::new(&proc_path).exists() {
-                    return Ok(false);
-                }
-            }
+        Ok(_) => {
+            let _lock = match acquire_single_instance_lock(&paths.lock_file) {
+                Ok(lock) => lock,
+                Err(DaemonError::AlreadyRunning) => return Ok(false),
+                Err(error) => return Err(error),
+            };
             match fs::remove_file(&paths.runtime_file) {
                 Ok(()) => Ok(true),
                 Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(false),
