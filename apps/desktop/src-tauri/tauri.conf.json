@@ -36,10 +36,6 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": [
-      "binaries/agenttracebackd",
-      "binaries/agenttraceback"
-    ],
     "category": "DeveloperTool",
     "shortDescription": "Verified record and recovery for AI coding-agent runs",
     "longDescription": "Every agent. Every action. One timeline. AgentTraceback is a local-first verified record and recovery tool for AI coding-agent runs.",

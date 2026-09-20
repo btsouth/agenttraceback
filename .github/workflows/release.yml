@@ -91,16 +91,14 @@ jobs:
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
+          sidecar_config='{"bundle":{"externalBin":["binaries/agenttracebackd","binaries/agenttraceback"]}}'
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$TAURI_UPDATER_PUBLIC_KEY" ]; then
-            pnpm --filter @agenttraceback/desktop tauri build \
-              --target "${{ matrix.target }}" \
-              --bundles "${{ matrix.bundles }}" \
-              --config "{\"bundle\":{\"createUpdaterArtifacts\":true},\"plugins\":{\"updater\":{\"pubkey\":\"$TAURI_UPDATER_PUBLIC_KEY\",\"endpoints\":[\"https://github.com/agenttraceback-tools/agenttraceback/releases/latest/download/latest.json\"]}}}"
-          else
-            pnpm --filter @agenttraceback/desktop tauri build \
-              --target "${{ matrix.target }}" \
-              --bundles "${{ matrix.bundles }}"
+            sidecar_config="{\"bundle\":{\"externalBin\":[\"binaries/agenttracebackd\",\"binaries/agenttraceback\"],\"createUpdaterArtifacts\":true},\"plugins\":{\"updater\":{\"pubkey\":\"$TAURI_UPDATER_PUBLIC_KEY\",\"endpoints\":[\"https://github.com/agenttraceback-tools/agenttraceback/releases/latest/download/latest.json\"]}}}"
           fi
+          pnpm --filter @agenttraceback/desktop tauri build \
+            --target "${{ matrix.target }}" \
+            --bundles "${{ matrix.bundles }}" \
+            --config "$sidecar_config"
       - name: Generate checksums
         shell: bash
         run: |

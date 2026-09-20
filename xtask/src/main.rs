@@ -9,6 +9,9 @@ use std::{
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 
+const SIDECAR_BUNDLE_CONFIG: &str =
+    "{\"bundle\":{\"externalBin\":[\"binaries/agenttracebackd\",\"binaries/agenttraceback\"]}}";
+
 #[derive(Debug, Parser)]
 #[command(about = "AgentTraceback repository automation")]
 struct Cli {
@@ -193,6 +196,8 @@ fn package() -> Result<()> {
                 "build",
                 "--bundles",
                 "deb,rpm,appimage",
+                "--config",
+                SIDECAR_BUNDLE_CONFIG,
             ],
         );
         if full.is_err() {
@@ -208,13 +213,22 @@ fn package() -> Result<()> {
                     "build",
                     "--bundles",
                     "deb,rpm",
+                    "--config",
+                    SIDECAR_BUNDLE_CONFIG,
                 ],
             )?;
         }
     } else {
-        run_command(
-            "pnpm",
-            ["--filter", "@agenttraceback/desktop", "tauri", "build"],
+        run_os_command(
+            program("pnpm"),
+            [
+                "--filter",
+                "@agenttraceback/desktop",
+                "tauri",
+                "build",
+                "--config",
+                SIDECAR_BUNDLE_CONFIG,
+            ],
         )?;
     }
     Ok(())
