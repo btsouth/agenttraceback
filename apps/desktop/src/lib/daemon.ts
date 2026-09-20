@@ -255,6 +255,7 @@ export interface RecoveryPlanView {
 }
 
 export interface RecoveryRunView {
+  backupPlanId: string | null;
   runId: string;
   planId: string;
   state: string;

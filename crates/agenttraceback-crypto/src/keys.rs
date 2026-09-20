@@ -191,6 +191,7 @@ impl MasterKeyStore {
                 match self.load_or_create_secret_service() {
                     Ok(loaded) => return Ok(loaded),
                     Err(error) => {
+                        self.require_first_run()?;
                         tracing::warn!(
                             %error,
                             "Secret Service unavailable; using owner-only key file"
@@ -200,10 +201,33 @@ impl MasterKeyStore {
             }
         }
 
+        if !self.key_file.exists() {
+            self.require_first_run()?;
+        }
         Ok(LoadedMasterKey {
             key: load_or_create_file_key(&self.key_file)?,
             protection: KeyProtectionKind::DevicePermissionsOnly,
         })
+    }
+
+    fn require_first_run(&self) -> Result<(), KeyError> {
+        let parent = self.key_file.parent().ok_or(KeyError::MalformedKey)?;
+        let blobs_exist = match fs::read_dir(parent.join("blobs")) {
+            Ok(mut entries) => entries.next().is_some(),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+            Err(source) => {
+                return Err(KeyError::Io {
+                    path: parent.join("blobs"),
+                    source,
+                });
+            }
+        };
+        if parent.join("agenttraceback.db").exists() || blobs_exist {
+            return Err(KeyError::CredentialStoreUnavailable(
+                "existing data requires its original installation key; unlock or restore the credential store instead of creating a replacement key".to_owned(),
+            ));
+        }
+        Ok(())
     }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
@@ -214,6 +238,7 @@ impl MasterKeyStore {
         let key = match entry.get_secret() {
             Ok(bytes) => MasterKey::from_bytes(&bytes)?,
             Err(keyring::Error::NoEntry) => {
+                self.require_first_run()?;
                 let key = MasterKey::generate();
                 entry
                     .set_secret(key.expose_for_persistence())
@@ -244,6 +269,7 @@ impl MasterKeyStore {
         let key = match entry.get_secret() {
             Ok(bytes) => MasterKey::from_bytes(&bytes)?,
             Err(keyring::Error::NoEntry) => {
+                self.require_first_run()?;
                 let key = MasterKey::generate();
                 entry
                     .set_secret(key.expose_for_persistence())
@@ -278,8 +304,13 @@ fn load_or_create_file_key(path: &Path) -> Result<MasterKey, KeyError> {
         return load_file_key(path);
     }
     let key = MasterKey::generate();
-    write_file_key(path, &key)?;
-    Ok(key)
+    match write_file_key(path, &key) {
+        Ok(()) => Ok(key),
+        Err(KeyError::Io { source, .. }) if source.kind() == io::ErrorKind::AlreadyExists => {
+            load_file_key(path)
+        }
+        Err(error) => Err(error),
+    }
 }
 
 fn load_file_key(path: &Path) -> Result<MasterKey, KeyError> {
@@ -316,10 +347,12 @@ fn write_file_key(path: &Path, key: &MasterKey) -> Result<(), KeyError> {
             path: temporary.path().to_path_buf(),
             source,
         })?;
-    temporary.persist(path).map_err(|error| KeyError::Io {
-        path: path.to_path_buf(),
-        source: error.error,
-    })?;
+    temporary
+        .persist_noclobber(path)
+        .map_err(|error| KeyError::Io {
+            path: path.to_path_buf(),
+            source: error.error,
+        })?;
     sync_parent_directory(path)?;
     set_private_file(path)
 }
@@ -398,6 +431,47 @@ mod tests {
     fn debug_output_does_not_expose_key_material() {
         let key = MasterKey::generate();
         assert_eq!(format!("{key:?}"), "MasterKey([REDACTED])");
+    }
+
+    #[test]
+    fn missing_key_with_existing_database_fails_closed() {
+        let directory = tempfile::tempdir().expect("directory");
+        std::fs::write(directory.path().join("agenttraceback.db"), b"existing data")
+            .expect("database");
+        assert!(
+            MasterKeyStore::file_backed(directory.path())
+                .load_or_create()
+                .is_err()
+        );
+        assert!(!directory.path().join("master.key").exists());
+    }
+
+    #[test]
+    fn concurrent_file_key_creation_keeps_one_key() {
+        let directory = tempfile::tempdir().expect("directory");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
+        let keys = std::thread::scope(|scope| {
+            let threads: Vec<_> = (0..8)
+                .map(|_| {
+                    let barrier = barrier.clone();
+                    let path = directory.path();
+                    scope.spawn(move || {
+                        barrier.wait();
+                        MasterKeyStore::file_backed(path)
+                            .load_or_create()
+                            .expect("key")
+                            .key
+                            .derive_subkey("test")
+                            .expect("derive")
+                    })
+                })
+                .collect();
+            threads
+                .into_iter()
+                .map(|thread| thread.join().expect("thread"))
+                .collect::<Vec<_>>()
+        });
+        assert!(keys.iter().all(|key| key == &keys[0]));
     }
 
     #[cfg(unix)]

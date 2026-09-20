@@ -99,12 +99,34 @@ pub fn capture_git_state(repo_root: &Path) -> Result<Option<GitStateSnapshot>, G
 }
 
 fn run_git<const N: usize>(repo_root: &Path, arguments: [&str; N]) -> Result<String, GitError> {
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(repo_root)
-        .arg("--no-optional-locks")
-        .args(arguments)
-        .output()?;
+    let mut command = base_git_command(repo_root);
+    if arguments.first() == Some(&"status") {
+        let filters = base_git_command(repo_root)
+            .args([
+                "config",
+                "--null",
+                "--name-only",
+                "--get-regexp",
+                r"^filter\..*\.(clean|smudge|process|required)$",
+            ])
+            .output()?;
+        if !filters.status.success() && filters.status.code() != Some(1) {
+            return Err(GitError::Failed(
+                "could not inspect Git filters safely".to_owned(),
+            ));
+        }
+        let keys = std::str::from_utf8(&filters.stdout)
+            .map_err(|_| GitError::Failed("Git filter keys are not UTF-8".to_owned()))?;
+        for key in keys.split('\0').filter(|key| !key.is_empty()) {
+            let value = if key.ends_with(".required") {
+                "false"
+            } else {
+                ""
+            };
+            command.arg("-c").arg(format!("{key}={value}"));
+        }
+    }
+    let output = command.args(arguments).output()?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).into_owned())
     } else {
@@ -112,6 +134,26 @@ fn run_git<const N: usize>(repo_root: &Path, arguments: [&str; N]) -> Result<Str
             String::from_utf8_lossy(&output.stderr).trim().to_owned(),
         ))
     }
+}
+
+fn base_git_command(repo_root: &Path) -> Command {
+    let mut command = Command::new("git");
+    command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.sshCommand=false",
+            "-c",
+            "protocol.file.allow=never",
+        ])
+        .arg("-C")
+        .arg(repo_root)
+        .arg("--no-optional-locks");
+    command
 }
 
 #[cfg(test)]
@@ -134,5 +176,40 @@ mod tests {
             .expect("git state");
         assert!(!state.dirty);
         assert_eq!(state.repo_root, directory.path());
+    }
+
+    #[test]
+    fn passive_capture_does_not_execute_repository_filters() {
+        let directory = tempfile::tempdir().expect("directory");
+        let git = |args: &[&str]| {
+            assert!(
+                Command::new("git")
+                    .args(args)
+                    .current_dir(directory.path())
+                    .status()
+                    .expect("git")
+                    .success()
+            );
+        };
+        git(&["init", "-q"]);
+        std::fs::write(
+            directory.path().join(".gitattributes"),
+            "*.txt filter=fixture\n",
+        )
+        .expect("attributes");
+        std::fs::write(directory.path().join("file.txt"), "before").expect("file");
+        git(&["add", "."]);
+        git(&[
+            "config",
+            "filter.fixture.clean",
+            "echo invoked > filter-ran; cat",
+        ]);
+        git(&["config", "filter.fixture.required", "true"]);
+        std::fs::write(directory.path().join("file.txt"), "modified after indexing")
+            .expect("modify");
+        capture_git_state(directory.path())
+            .expect("capture")
+            .expect("state");
+        assert!(!directory.path().join("filter-ran").exists());
     }
 }

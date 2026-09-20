@@ -532,7 +532,7 @@ fn finalize_chain(
             "INSERT INTO chain_roots (
                 id, session_id, chain_version, entry_count, root_hash, signature,
                 signing_key_id, finalized_at_us, verification_status
-             ) VALUES (?1, ?2, 1, ?3, ?4, NULL, NULL, ?5, 'verified')",
+             ) VALUES (?1, ?2, 1, ?3, ?4, NULL, NULL, ?5, 'unsigned')",
             rusqlite::params![
                 id_blob(root_id),
                 optional_id_blob(session_id),
@@ -848,7 +848,30 @@ fn delete_project_data(connection: &mut Connection, project_id: EntityId) -> Sto
             [project.as_slice()],
         )
         .map_err(StoreError::Sqlite)?;
+    let audit_id = EntityId::new();
+    transaction
+        .execute(
+            "INSERT INTO deletion_audit(id, target_kind, target_id, event_count, created_at_us)
+         SELECT ?1, 'project', ?2, COUNT(*), ?3 FROM events WHERE project_id = ?4",
+            rusqlite::params![
+                id_blob(audit_id),
+                project_id.to_string(),
+                migration::current_time_us(),
+                project.as_slice()
+            ],
+        )
+        .map_err(StoreError::Sqlite)?;
+    transaction
+        .execute(
+            "INSERT INTO deleted_chain_targets(target_id, deletion_audit_id)
+         SELECT ce.target_id, ?1 FROM chain_entries ce
+         JOIN events e ON lower(hex(e.id)) = replace(ce.target_id, '-', '')
+         WHERE ce.chain_scope = 'global' AND ce.entry_kind = 'source_event' AND e.project_id = ?2",
+            rusqlite::params![id_blob(audit_id), project.as_slice()],
+        )
+        .map_err(StoreError::Sqlite)?;
     for statement in [
+        "DELETE FROM chain_roots WHERE session_id IN (SELECT id FROM sessions WHERE project_id = ?1)",
         "DELETE FROM correlation_conflicts
          WHERE left_event_id IN (SELECT id FROM events WHERE project_id = ?1)
             OR right_event_id IN (SELECT id FROM events WHERE project_id = ?1)",
@@ -887,19 +910,6 @@ fn delete_project_data(connection: &mut Connection, project_id: EntityId) -> Sto
             .map_err(StoreError::Sqlite)?,
     )
     .map_err(|_| StoreError::InvalidStoredValue("deleted event count"))?;
-    transaction
-        .execute(
-            "INSERT INTO deletion_audit(
-                id, target_kind, target_id, event_count, created_at_us
-             ) VALUES (?1, 'project', ?2, ?3, ?4)",
-            rusqlite::params![
-                id_blob(EntityId::new()),
-                project_id.to_string(),
-                u64_to_i64(deleted_events)?,
-                migration::current_time_us(),
-            ],
-        )
-        .map_err(StoreError::Sqlite)?;
     transaction
         .execute("DELETE FROM deletion_context WHERE id = 1", [])
         .map_err(StoreError::Sqlite)?;
@@ -1179,8 +1189,8 @@ fn save_recovery_run(connection: &Connection, run: RecoveryRunRecord) -> StoreRe
         .execute(
             "INSERT INTO recovery_runs (
                 id, plan_id, state, restored_files, skipped_files, conflict_files,
-                result_blob_id, created_at_us, finished_at_us, error_code
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                result_blob_id, created_at_us, finished_at_us, error_code, backup_plan_id
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT(id) DO UPDATE SET
                 state = excluded.state,
                 restored_files = excluded.restored_files,
@@ -1200,6 +1210,7 @@ fn save_recovery_run(connection: &Connection, run: RecoveryRunRecord) -> StoreRe
                 run.created_at_us,
                 run.finished_at_us,
                 run.error_code,
+                optional_id_blob(run.backup_plan_id),
             ],
         )
         .map_err(StoreError::Sqlite)?;

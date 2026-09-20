@@ -39,3 +39,14 @@ current chain tail.
 
 Signed roots remain later work. The Ed25519 root-signing interface exists but is
 intentionally not enabled in v0.1.
+
+Unsigned roots are labeled `unsigned`. A valid chain proves internal consistency,
+not an external signature or protection against a process that can rewrite the
+entire database and its hashes. Recovery metadata tables are not covered by the
+event chain. Recovery plans and content are encrypted and authenticated; plan
+digests bind the operations approved by the user. The local OS account and its
+credential store remain trusted boundaries.
+
+Audited project deletion removes its session roots and search-index rows. Global
+chain hashes remain in place with content-free deletion markers linked to the
+deletion audit, so subsequent recording and verification can continue.

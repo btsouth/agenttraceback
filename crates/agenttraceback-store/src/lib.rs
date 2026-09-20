@@ -536,6 +536,8 @@ pub struct RecoveryRunRecord {
     pub id: EntityId,
     /// Plan identifier.
     pub plan_id: EntityId,
+    /// Encrypted pre-restore backup plan, retained on failure.
+    pub backup_plan_id: Option<EntityId>,
     /// Run state.
     pub state: String,
     /// Restored file count.
@@ -1219,7 +1221,7 @@ impl Store {
                 .query_row(
                     "SELECT id, plan_id, state, restored_files, skipped_files,
                             conflict_files, result_blob_id, created_at_us,
-                            finished_at_us, error_code
+                            finished_at_us, error_code, backup_plan_id
                      FROM recovery_runs WHERE id = ?1",
                     [run_id.as_uuid().as_bytes().as_slice()],
                     |row| {
@@ -1234,6 +1236,7 @@ impl Store {
                             row.get::<_, i64>(7)?,
                             row.get::<_, Option<i64>>(8)?,
                             row.get::<_, Option<String>>(9)?,
+                            row.get::<_, Option<Vec<u8>>>(10)?,
                         ))
                     },
                 )
@@ -1254,6 +1257,7 @@ impl Store {
                     created_at_us: row.7,
                     finished_at_us: row.8,
                     error_code: row.9,
+                    backup_plan_id: row.10.as_deref().map(writer::uuid_from_blob).transpose()?,
                 })
             })
             .transpose()
@@ -2140,7 +2144,16 @@ fn verify_chain_sync(
             .optional()
             .map_err(StoreError::Sqlite)?;
         let Some(envelope_json) = envelope_json else {
-            report.missing_sequences.push(entry.sequence);
+            let deleted = connection
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM deleted_chain_targets WHERE target_id = ?1)",
+                    [&entry.target_id],
+                    |row| row.get::<_, bool>(0),
+                )
+                .map_err(StoreError::Sqlite)?;
+            if !deleted {
+                report.missing_sequences.push(entry.sequence);
+            }
             continue;
         };
         let mut envelope: EventEnvelope =
@@ -2541,6 +2554,70 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn deleting_finalized_project_preserves_global_chain() {
+        let (_directory, store) = test_store().await;
+        let project_id = EntityId::new();
+        let session_id = EntityId::new();
+        insert_test_session(store.database_path(), session_id);
+        let connection = rusqlite::Connection::open(store.database_path()).expect("connection");
+        connection.execute(
+            "INSERT INTO projects(id, display_name, canonical_root, comparison_root, vcs_kind, created_at_us, last_seen_at_us)
+             VALUES (?1, 'project', '/test-project', '/test-project', 'none', 1, 1)",
+            [project_id.as_uuid().as_bytes().as_slice()],
+        ).expect("project");
+        connection
+            .execute(
+                "UPDATE sessions SET project_id = ?1 WHERE id = ?2",
+                rusqlite::params![
+                    project_id.as_uuid().as_bytes().as_slice(),
+                    session_id.as_uuid().as_bytes().as_slice()
+                ],
+            )
+            .expect("attach session");
+        let mut session_event = test_event("session");
+        session_event.project_id = Some(project_id);
+        session_event.session_id = Some(session_id);
+        let mut global_event = test_event("global-project");
+        global_event.project_id = Some(project_id);
+        store
+            .append_events(vec![
+                test_event("global-before"),
+                session_event,
+                global_event,
+            ])
+            .await
+            .expect("append");
+        store
+            .finalize_chain(Some(session_id))
+            .await
+            .expect("finalize");
+        assert_eq!(
+            store.delete_project_data(project_id).await.expect("delete"),
+            2
+        );
+        store
+            .append_events(vec![test_event("global-after")])
+            .await
+            .expect("global remains writable");
+        assert!(
+            store
+                .verify_chain(None)
+                .await
+                .expect("verify global")
+                .is_valid()
+        );
+        assert_eq!(store.event_count().await.expect("count"), 2);
+        assert_eq!(
+            connection
+                .query_row("SELECT COUNT(*) FROM chain_roots", [], |row| row
+                    .get::<_, i64>(0))
+                .expect("roots"),
+            0
+        );
+        store.close().await.expect("close");
+    }
+
+    #[tokio::test]
     async fn migrates_version_one_database_with_backup() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let database = directory.path().join("agenttraceback.db");
@@ -2570,7 +2647,7 @@ mod tests {
         let version = connection
             .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
             .expect("version");
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let table_count = connection
             .query_row(
                 "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'recovery_plans'",

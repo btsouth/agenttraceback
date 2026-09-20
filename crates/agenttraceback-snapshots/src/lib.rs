@@ -535,6 +535,17 @@ fn tracked_files(scope: &ProjectScope) -> Result<HashSet<String>, SnapshotError>
         return Ok(HashSet::new());
     }
     let output = Command::new("git")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.sshCommand=false",
+            "-c",
+            "protocol.file.allow=never",
+        ])
         .arg("-C")
         .arg(&scope.canonical_root)
         .arg("--no-optional-locks")

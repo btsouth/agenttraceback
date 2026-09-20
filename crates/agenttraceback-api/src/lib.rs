@@ -325,6 +325,8 @@ pub struct RecoveryRunView {
     pub run_id: String,
     /// Plan identifier.
     pub plan_id: String,
+    /// Plan that restores the encrypted pre-restore backup.
+    pub backup_plan_id: Option<String>,
     /// Run state.
     pub state: String,
     /// Restored files.

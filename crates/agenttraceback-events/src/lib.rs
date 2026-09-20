@@ -73,6 +73,7 @@ pub enum IngestionError {
 /// Bounded asynchronous event ingestion backed by the encrypted store and blob store.
 #[derive(Debug)]
 pub struct IngestionPipeline {
+    redactor: Redactor,
     sender: mpsc::Sender<IngestionCommand>,
     worker: tokio::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     max_raw_payload_bytes: usize,
@@ -100,19 +101,26 @@ impl IngestionPipeline {
     ) -> Self {
         let max_raw_payload_bytes = config.max_raw_payload_bytes;
         let (sender, receiver) = mpsc::channel(config.queue_capacity.max(1));
+        let redactor = Redactor::new(master_key);
         let worker = tokio::spawn(run_worker(
             store,
             blobs,
-            Redactor::new(master_key),
+            redactor.clone(),
             RiskEngine::default(),
             config,
             receiver,
         ));
         Self {
+            redactor,
             sender,
             worker: tokio::sync::Mutex::new(Some(worker)),
             max_raw_payload_bytes,
         }
+    }
+
+    /// Redacts session metadata before persistence and full-text indexing.
+    pub fn redact_preview(&self, text: &str) -> Result<String, RedactionError> {
+        self.redactor.redact_text(text)
     }
 
     /// Queues one normalized event and optional raw source payload.

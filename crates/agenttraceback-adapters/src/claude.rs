@@ -398,7 +398,8 @@ async fn import_source(
         &source.canonical_location,
         cursor.byte_offset,
         MAX_RECORDS_PER_BATCH,
-    )?;
+    )
+    .await?;
     let mut events_imported = 0_u64;
     let mut last_event_id = None;
     for record in batch.records {

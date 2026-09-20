@@ -80,6 +80,9 @@ environment.
 
 - The seven-day mixed-session soak has not yet been run to completion in this
   repository revision.
+- Integrity chains are unsigned internal-consistency checks. They do not protect
+  against wholesale rewriting by a process with the same OS-account access.
+  See [Storage and Integrity](architecture/storage.md).
 - Packaged install/uninstall/reboot smoke tests require Windows, macOS, and Linux
   hosts and credentials; source builds and Tauri bundle configuration are present.
 - Full export is opt-in only (`--full`), contains explicitly decrypted eligible

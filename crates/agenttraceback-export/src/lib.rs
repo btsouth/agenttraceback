@@ -155,12 +155,8 @@ pub fn render_markdown(bundle: &EvidenceBundle) -> Result<String, ExportError> {
     writeln!(output).expect("writing to string");
     writeln!(output, "## Session").expect("writing to string");
     writeln!(output).expect("writing to string");
-    writeln!(
-        output,
-        "- ID: `{}`",
-        export_text(bundle, &bundle.session.id)
-    )
-    .expect("writing to string");
+    writeln!(output, "- ID: {}", export_text(bundle, &bundle.session.id))
+        .expect("writing to string");
     writeln!(
         output,
         "- Title: {}",
@@ -191,7 +187,12 @@ pub fn render_markdown(bundle: &EvidenceBundle) -> Result<String, ExportError> {
         )
     )
     .expect("writing to string");
-    writeln!(output, "- Outcome: {}", bundle.session.outcome).expect("writing to string");
+    writeln!(
+        output,
+        "- Outcome: {}",
+        export_text(bundle, &bundle.session.outcome)
+    )
+    .expect("writing to string");
     writeln!(
         output,
         "- Capture health: {}",
@@ -221,15 +222,12 @@ pub fn render_markdown(bundle: &EvidenceBundle) -> Result<String, ExportError> {
             event.occurred_at_us,
             event.evidence.class.as_str().to_uppercase(),
             event.action.as_str(),
-            escape_markdown(&export_text(
-                bundle,
-                event.target.display.as_deref().unwrap_or(""),
-            )),
+            export_text(bundle, event.target.display.as_deref().unwrap_or("")),
             event.result.status.as_str(),
-            escape_markdown(&export_text(
+            export_text(
                 bundle,
                 event.content.redacted_preview.as_deref().unwrap_or(""),
-            )),
+            ),
         )
         .expect("writing to string");
     }
@@ -246,10 +244,10 @@ pub fn render_markdown(bundle: &EvidenceBundle) -> Result<String, ExportError> {
             writeln!(
                 output,
                 "| {} | {} | {} | {} |",
-                escape_markdown(&export_text(bundle, &file.path)),
-                file.before_hash.as_deref().unwrap_or("none"),
-                file.after_hash.as_deref().unwrap_or("none"),
-                file.capture_status,
+                export_text(bundle, &file.path),
+                export_text(bundle, file.before_hash.as_deref().unwrap_or("none")),
+                export_text(bundle, file.after_hash.as_deref().unwrap_or("none")),
+                export_text(bundle, &file.capture_status),
             )
             .expect("writing to string");
         }
@@ -265,8 +263,8 @@ pub fn render_markdown(bundle: &EvidenceBundle) -> Result<String, ExportError> {
             writeln!(
                 output,
                 "### {} ({}, {})",
-                escape_markdown(&export_text(bundle, &finding.title)),
-                finding.severity,
+                export_text(bundle, &finding.title),
+                export_text(bundle, &finding.severity),
                 finding.rule_id
             )
             .expect("writing to string");
@@ -306,9 +304,9 @@ pub fn render_markdown(bundle: &EvidenceBundle) -> Result<String, ExportError> {
 
 fn export_text(bundle: &EvidenceBundle, input: &str) -> String {
     if bundle.redacted {
-        scrub_text(input)
+        escape_markdown(&scrub_text(input))
     } else {
-        input.to_owned()
+        escape_markdown(input)
     }
 }
 
@@ -332,15 +330,40 @@ fn scrub_text(input: &str) -> String {
 }
 
 fn escape_markdown(input: &str) -> String {
-    input
-        .replace('\\', "\\\\")
-        .replace('|', "\\|")
-        .replace(['\r', '\n'], " ")
+    let mut output = String::new();
+    for character in input.chars() {
+        match character {
+            '\r' | '\n' => output.push(' '),
+            '&' => output.push_str("&amp;"),
+            '<' => output.push_str("&lt;"),
+            '>' => output.push_str("&gt;"),
+            '\\' | '`' | '*' | '_' | '{' | '}' | '[' | ']' | '(' | ')' | '#' | '+' | '-' | '.'
+            | '!' | '|' => {
+                output.push('\\');
+                output.push(character);
+            }
+            _ => output.push(character),
+        }
+    }
+    output
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn untrusted_title_is_literal_markdown_text() {
+        let mut bundle = bundle_with_secret();
+        bundle.session.title = Some(
+            "<img src=x onerror=alert(1)> [click](https://example.invalid)\n# forged".to_owned(),
+        );
+        let markdown = render_markdown(&bundle).expect("markdown");
+        assert!(!markdown.contains("<img"));
+        assert!(!markdown.contains("[click]("));
+        assert!(!markdown.contains("\n# forged"));
+        assert!(markdown.contains("&lt;img"));
+    }
     use agenttraceback_types::{
         AttributionConfidence, EntityId, EventAction, EventContent, EventEnvelope, EventEvidence,
         EventResult, EventRisk, EventSource, EventTarget, EvidenceClass, ResultStatus, SourceKind,

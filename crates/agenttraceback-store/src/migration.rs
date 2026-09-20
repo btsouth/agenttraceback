@@ -8,7 +8,7 @@ use rusqlite::{Connection, TransactionBehavior, params};
 
 use crate::{StoreError, StoreResult};
 
-pub(crate) const TARGET_SCHEMA_VERSION: i64 = 4;
+pub(crate) const TARGET_SCHEMA_VERSION: i64 = 5;
 const MIGRATIONS: &[(i64, &str, &str)] = &[
     (
         1,
@@ -40,6 +40,14 @@ const MIGRATIONS: &[(i64, &str, &str)] = &[
         include_str!(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../migrations/0004_audited_deletion.sql"
+        )),
+    ),
+    (
+        5,
+        "0005_recovery_backups_and_deletion",
+        include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../migrations/0005_recovery_backups_and_deletion.sql"
         )),
     ),
 ];
@@ -152,12 +160,22 @@ fn create_pre_migration_backup(
         path: backup_root.to_path_buf(),
         source,
     })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(backup_root, fs::Permissions::from_mode(0o700)).map_err(|source| {
+            StoreError::Io {
+                path: backup_root.to_path_buf(),
+                source,
+            }
+        })?;
+    }
     let backup_path = unique_backup_path(backup_root, current_version);
     let backup_path_text = backup_path.to_string_lossy();
     connection
         .execute("VACUUM INTO ?1", [backup_path_text.as_ref()])
         .map_err(StoreError::Sqlite)?;
-    Ok(())
+    set_private_file(&backup_path)
 }
 
 fn unique_backup_path(backup_root: &Path, schema_version: i64) -> PathBuf {

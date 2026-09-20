@@ -1358,6 +1358,12 @@ async fn recover(json: bool, command: RecoverCommand) -> Result<(), CliError> {
                 println!("{}", serde_json::to_string_pretty(&run)?);
             } else {
                 println!("Recovery run {}", run.run_id);
+                if let Some(backup_plan_id) = &run.backup_plan_id {
+                    println!("Pre-restore backup plan: {backup_plan_id}");
+                    println!(
+                        "Undo with: agenttraceback recover execute {backup_plan_id} --confirm"
+                    );
+                }
                 println!("state: {}", run.state);
                 println!("destination: {}", run.destination);
                 println!(

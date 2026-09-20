@@ -277,16 +277,14 @@ impl AdapterController for AdapterService {
             })?;
         if current.before_hash != request.plan.before_hash
             || current.plan_digest != request.plan.plan_digest
+            || current.config_path != request.plan.config_path
         {
             return Err(SessionControllerError::internal(
                 "hook_plan_stale",
                 "The hook configuration changed after the plan was generated.",
             ));
         }
-        let receipt = adapter
-            .install_hook(request.plan)
-            .await
-            .map_err(adapter_error)?;
+        let receipt = adapter.install_hook(current).await.map_err(adapter_error)?;
         self.store
             .save_adapter_hook(AdapterHookRecord {
                 id: EntityId::new(),
@@ -424,7 +422,12 @@ impl PersistentAdapterSink {
             .upsert_session(SessionRecord {
                 id: session_id,
                 project_id,
-                title_preview: metadata.title_preview.clone(),
+                title_preview: metadata
+                    .title_preview
+                    .as_deref()
+                    .map(|title| self.pipeline.redact_preview(title))
+                    .transpose()
+                    .map_err(|error| AdapterError::Sink(error.to_string()))?,
                 state: "imported".to_owned(),
                 started_at_us: current_time_us(),
                 ended_at_us: None,
@@ -527,4 +530,63 @@ fn current_time_us() -> i64 {
         .as_micros()
         .try_into()
         .unwrap_or(i64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agenttraceback_blobs::BlobStore;
+    use agenttraceback_crypto::{BlobCipher, MasterKey};
+    use agenttraceback_events::IngestionConfig;
+
+    #[tokio::test]
+    async fn imported_title_is_redacted_before_storage() {
+        let directory = tempfile::tempdir().expect("directory");
+        let store = Store::open(
+            directory.path().join("db"),
+            directory.path().join("backups"),
+        )
+        .await
+        .expect("store");
+        let key = MasterKey::generate();
+        let blobs = BlobStore::open(
+            directory.path().join("blobs"),
+            BlobCipher::from_master_key(&key).expect("cipher"),
+        )
+        .expect("blobs");
+        let pipeline = Arc::new(IngestionPipeline::start(
+            store.clone(),
+            blobs,
+            key,
+            IngestionConfig::default(),
+        ));
+        let sink = PersistentAdapterSink::new(store.clone(), pipeline.clone());
+        let id = sink
+            .ensure_session(
+                EntityId::new(),
+                &AdapterSessionMetadata {
+                    native_session_id: "fixture".to_owned(),
+                    project_root: None,
+                    title_preview: Some("Fix sk-secretsecretsecretsecret".to_owned()),
+                    agent_name: "fixture".to_owned(),
+                    harness_name: None,
+                    provider_name: None,
+                    model_name: None,
+                    historical: true,
+                },
+                current_time_us(),
+            )
+            .await
+            .expect("session");
+        let session = store
+            .get_session_summary(id)
+            .await
+            .expect("query")
+            .expect("session");
+        let title = session.title_preview.expect("title");
+        assert!(!title.contains("sk-secretsecretsecretsecret"));
+        assert!(title.contains("REDACTED"));
+        pipeline.close().await.expect("shutdown");
+        store.close().await.expect("close");
+    }
 }

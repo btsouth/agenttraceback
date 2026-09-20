@@ -79,7 +79,7 @@ impl ProjectScope {
                 .map(Path::to_path_buf)
                 .ok_or_else(|| ProjectError::NotDirectory(requested.clone()))?
         };
-        let root = git_root(&root)?.unwrap_or(root);
+        let detected_git_root = git_root(&root)?;
         let display_name = root
             .file_name()
             .and_then(|name| name.to_str())
@@ -91,16 +91,12 @@ impl ProjectScope {
             display_name,
             canonical_root: root.clone(),
             comparison_root,
-            vcs_kind: if root.join(".git").exists() {
+            vcs_kind: if detected_git_root.is_some() {
                 VcsKind::Git
             } else {
                 VcsKind::None
             },
-            git_root: if root.join(".git").exists() {
-                Some(root)
-            } else {
-                None
-            },
+            git_root: detected_git_root,
             case_insensitive: cfg!(windows),
         })
     }
@@ -200,5 +196,27 @@ mod tests {
     fn comparison_path_is_stable() {
         let path = std::path::Path::new("/tmp/project/");
         assert_eq!(comparison_path(path), "/tmp/project");
+    }
+
+    #[test]
+    fn selected_subdirectory_does_not_expand_to_repository_root() {
+        let directory = tempfile::tempdir().expect("directory");
+        assert!(
+            std::process::Command::new("git")
+                .args(["init", "-q"])
+                .current_dir(directory.path())
+                .status()
+                .expect("git")
+                .success()
+        );
+        let selected = directory.path().join("selected");
+        fs::create_dir(&selected).expect("selected");
+        let scope = ProjectScope::discover(&selected).expect("scope");
+        assert_eq!(
+            scope.canonical_root,
+            fs::canonicalize(selected).expect("canonical")
+        );
+        assert_eq!(scope.vcs_kind, VcsKind::Git);
+        assert!(!scope.contains(directory.path()).expect("containment"));
     }
 }

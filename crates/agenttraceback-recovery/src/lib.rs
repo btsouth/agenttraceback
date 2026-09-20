@@ -2,12 +2,12 @@
 
 use std::{
     fs,
-    io::{self, Write},
+    io::{self, Read, Write},
     path::{Component, Path, PathBuf},
     process::Command,
 };
 
-use agenttraceback_blobs::BlobStore;
+use agenttraceback_blobs::{BlobDescriptor, BlobStore};
 use agenttraceback_crypto::canonical_digest;
 use agenttraceback_store::SnapshotFileVersion;
 use agenttraceback_types::EntityId;
@@ -321,6 +321,102 @@ pub enum RecoveryError {
     Git(String),
 }
 
+/// Captures every existing in-place target before any restore writes occur.
+/// The returned plan and blob descriptors must be persisted before execution.
+pub fn backup_before_restore(
+    plan: &RecoveryPlan,
+    blobs: &BlobStore,
+    conflict_mode: ConflictMode,
+) -> Result<(RecoveryPlan, Vec<BlobDescriptor>), RecoveryError> {
+    plan.verify_digest()?;
+    let conflicts = conflict_paths(plan, &plan.destination)?;
+    if !conflicts.is_empty() && conflict_mode == ConflictMode::Refuse {
+        return Err(RecoveryError::Conflicts { paths: conflicts });
+    }
+    let mut operations = Vec::new();
+    let mut descriptors = Vec::new();
+    for operation in &plan.operations {
+        let path = safe_join(&plan.destination, &operation.relative_path)?;
+        let metadata = match fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(source) => return Err(RecoveryError::Io { path, source }),
+        };
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return Err(RecoveryError::UnsafePath(path));
+        }
+        const MAX_BACKUP_BYTES: u64 = 64 * 1024 * 1024;
+        let file = fs::File::open(&path).map_err(|source| RecoveryError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        let mut bytes = Vec::new();
+        file.take(MAX_BACKUP_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|source| RecoveryError::Io {
+                path: path.clone(),
+                source,
+            })?;
+        if bytes.len() as u64 > MAX_BACKUP_BYTES {
+            return Err(RecoveryError::NotRestorable(
+                operation.relative_path.clone(),
+            ));
+        }
+        let stored = blobs.put(&bytes)?;
+        #[cfg(unix)]
+        let executable = {
+            use std::os::unix::fs::PermissionsExt;
+            metadata.permissions().mode() & 0o111 != 0
+        };
+        #[cfg(not(unix))]
+        let executable = false;
+        operations.push(RecoveryOperation {
+            relative_path: operation.relative_path.clone(),
+            kind: RecoveryOperationKind::WriteFile,
+            source_version_id: EntityId::new(),
+            blob_id: Some(stored.descriptor.hex_digest.clone()),
+            expected_hash: Some(stored.descriptor.hex_digest.clone()),
+            expected_current_hash: operation.expected_hash.clone(),
+            byte_length: Some(bytes.len() as u64),
+            executable,
+            symlink_target: None,
+        });
+        descriptors.push(stored.descriptor);
+    }
+    let backup = finalize_plan(
+        plan.session_id,
+        RecoveryAction::InPlaceRestore,
+        plan.destination.clone(),
+        "pre_restore_backup".to_owned(),
+        operations,
+        Vec::new(),
+    )?;
+    Ok((backup, descriptors))
+}
+
+/// Executes an in-place plan only while targets still match the persisted backup.
+pub fn execute_with_backup_guard(
+    plan: &RecoveryPlan,
+    backup: &RecoveryPlan,
+    blobs: &BlobStore,
+) -> Result<RecoveryReport, RecoveryError> {
+    plan.verify_digest()?;
+    backup.verify_digest()?;
+    if plan.destination != backup.destination || plan.session_id != backup.session_id {
+        return Err(RecoveryError::PlanDigestMismatch);
+    }
+    let mut guarded = plan.clone();
+    for operation in &mut guarded.operations {
+        operation.expected_current_hash = backup
+            .operations
+            .iter()
+            .find(|before| before.relative_path == operation.relative_path)
+            .and_then(|before| before.expected_hash.clone());
+    }
+    guarded.plan_digest = plan_digest(&guarded)?;
+    execute(&guarded, blobs, &guarded.destination, ConflictMode::Refuse)
+}
+
 /// Executes a plan against its destination or an explicit target root.
 pub fn execute(
     plan: &RecoveryPlan,
@@ -329,10 +425,46 @@ pub fn execute(
     conflict_mode: ConflictMode,
 ) -> Result<RecoveryReport, RecoveryError> {
     plan.verify_digest()?;
+    let conflict_mode = if plan.action == RecoveryAction::InPlaceRestore {
+        conflict_mode
+    } else {
+        ConflictMode::Refuse
+    };
     prepare_destination(target_root)?;
+    if plan.action == RecoveryAction::ReconstructPreSession
+        && fs::read_dir(target_root)
+            .map_err(|source| RecoveryError::Io {
+                path: target_root.to_path_buf(),
+                source,
+            })?
+            .next()
+            .transpose()
+            .map_err(|source| RecoveryError::Io {
+                path: target_root.to_path_buf(),
+                source,
+            })?
+            .is_some()
+    {
+        return Err(RecoveryError::Conflicts {
+            paths: vec!["destination directory is not empty".to_owned()],
+        });
+    }
     let conflicts = conflict_paths(plan, target_root)?;
     if !conflicts.is_empty() && conflict_mode == ConflictMode::Refuse {
         return Err(RecoveryError::Conflicts { paths: conflicts });
+    }
+    for operation in &plan.operations {
+        safe_join(target_root, &operation.relative_path)?;
+        if operation.kind == RecoveryOperationKind::WriteFile {
+            let digest =
+                parse_digest(operation.blob_id.as_deref().ok_or_else(|| {
+                    RecoveryError::NotRestorable(operation.relative_path.clone())
+                })?)?;
+            let bytes = blobs.get(&digest)?;
+            if operation.expected_hash.as_deref() != Some(blake3::hash(&bytes).to_hex().as_str()) {
+                return Err(RecoveryError::HashMismatch(operation.relative_path.clone()));
+            }
+        }
     }
     let mut restored_files = 0_u64;
     for operation in &plan.operations {
@@ -351,6 +483,15 @@ pub fn execute(
                     .ok_or_else(|| RecoveryError::NotRestorable(operation.relative_path.clone()))?;
                 let digest = parse_digest(blob_id)?;
                 let bytes = blobs.get(&digest)?;
+                if plan.action == RecoveryAction::InPlaceRestore
+                    && conflict_mode == ConflictMode::Refuse
+                    && hash_path(&destination)? != operation.expected_current_hash
+                {
+                    return Err(RecoveryError::Conflicts {
+                        paths: vec![operation.relative_path.clone()],
+                    });
+                }
+                safe_join(target_root, &operation.relative_path)?;
                 let replace_existing = plan.action == RecoveryAction::InPlaceRestore
                     || plan.action == RecoveryAction::GitRecoveryWorktree
                     || conflict_mode == ConflictMode::Overwrite;
@@ -387,28 +528,28 @@ pub fn create_git_recovery_worktree(
     branch_name: &str,
 ) -> Result<(), RecoveryError> {
     let output = Command::new("git")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.sshCommand=false",
+            "-c",
+            "protocol.file.allow=never",
+        ])
         .arg("-C")
         .arg(repo_root)
         .arg("--no-optional-locks")
         .arg("worktree")
         .arg("add")
-        .arg("--detach")
+        .arg("--no-checkout")
+        .arg("-b")
+        .arg(branch_name)
+        .arg("--")
         .arg(worktree_path)
         .arg(head_oid)
-        .output()
-        .map_err(|error| RecoveryError::Git(error.to_string()))?;
-    if !output.status.success() {
-        return Err(RecoveryError::Git(
-            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-        ));
-    }
-    let output = Command::new("git")
-        .arg("-C")
-        .arg(worktree_path)
-        .arg("--no-optional-locks")
-        .arg("switch")
-        .arg("-c")
-        .arg(branch_name)
         .output()
         .map_err(|error| RecoveryError::Git(error.to_string()))?;
     if output.status.success() {
@@ -813,6 +954,49 @@ mod tests {
     }
 
     #[test]
+    fn encrypted_backup_can_undo_in_place_restore() {
+        let (_blob_directory, blobs) = blob_store();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let path = workspace.path().join("file.txt");
+        fs::write(&path, b"uncommitted work").expect("current");
+        let plan = RecoveryPlan::in_place(
+            EntityId::new(),
+            "exact",
+            workspace.path().to_path_buf(),
+            &[version(&blobs, "file.txt", b"historical content")],
+        )
+        .expect("plan");
+        let (backup, descriptors) =
+            super::backup_before_restore(&plan, &blobs, ConflictMode::Refuse).expect("backup");
+        assert_eq!(descriptors.len(), 1);
+        execute(&plan, &blobs, workspace.path(), ConflictMode::Refuse).expect("restore");
+        assert_eq!(fs::read(&path).expect("restored"), b"historical content");
+        execute(&backup, &blobs, workspace.path(), ConflictMode::Refuse).expect("undo");
+        assert_eq!(fs::read(&path).expect("undone"), b"uncommitted work");
+    }
+
+    #[test]
+    fn invalid_later_blob_does_not_modify_earlier_file() {
+        let (_blob_directory, blobs) = blob_store();
+        let workspace = tempfile::tempdir().expect("workspace");
+        fs::write(workspace.path().join("a.txt"), b"current").expect("current");
+        let mut bad = version(&blobs, "z.txt", b"wrong");
+        bad.content_hash = Some(blake3::hash(b"expected").to_hex().to_string());
+        let plan = RecoveryPlan::in_place(
+            EntityId::new(),
+            "exact",
+            workspace.path().to_path_buf(),
+            &[version(&blobs, "a.txt", b"historical"), bad],
+        )
+        .expect("plan");
+        assert!(execute(&plan, &blobs, workspace.path(), ConflictMode::Refuse).is_err());
+        assert_eq!(
+            fs::read(workspace.path().join("a.txt")).expect("preserved"),
+            b"current"
+        );
+    }
+
+    #[test]
     fn git_worktree_helper_uses_structured_argv() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let repo = directory.path().join("repo");
@@ -863,6 +1047,7 @@ mod tests {
             "agenttraceback/recovery/test",
         )
         .expect("worktree");
-        assert!(worktree.join("file.txt").is_file());
+        assert!(!worktree.join("file.txt").exists());
+        assert!(worktree.join(".git").is_file());
     }
 }

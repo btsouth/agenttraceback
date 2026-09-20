@@ -1,5 +1,6 @@
 use std::{
     path::{Path, PathBuf},
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -10,7 +11,7 @@ use agenttraceback_api::{
 use agenttraceback_blobs::BlobStore;
 use agenttraceback_recovery::{
     ConflictMode, RecoveryAction, RecoveryError, RecoveryOperationKind, RecoveryPlan,
-    create_git_recovery_worktree, execute,
+    backup_before_restore, create_git_recovery_worktree, execute, execute_with_backup_guard,
 };
 use agenttraceback_store::{BlobMetadata, RecoveryPlanRecord, RecoveryRunRecord, Store};
 use agenttraceback_types::EntityId;
@@ -21,13 +22,57 @@ use async_trait::async_trait;
 pub struct RecoveryCoordinator {
     store: Store,
     blobs: BlobStore,
+    execution_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl RecoveryCoordinator {
     /// Creates a recovery coordinator.
     #[must_use]
-    pub const fn new(store: Store, blobs: BlobStore) -> Self {
-        Self { store, blobs }
+    pub fn new(store: Store, blobs: BlobStore) -> Self {
+        Self {
+            store,
+            blobs,
+            execution_lock: Arc::new(tokio::sync::Mutex::new(())),
+        }
+    }
+
+    async fn persist_plan(&self, plan: &RecoveryPlan) -> Result<(), SessionControllerError> {
+        let plan_bytes = serde_json::to_vec(plan)
+            .map_err(|error| controller_internal("recovery_plan_encode_failed", error))?;
+        let stored = self
+            .blobs
+            .put(&plan_bytes)
+            .map_err(|error| controller_internal("recovery_plan_store_failed", error))?;
+        self.store
+            .record_blob(BlobMetadata {
+                id: stored.descriptor.hex_digest.clone(),
+                digest: stored.descriptor.hex_digest.clone(),
+                format_version: stored.descriptor.format_version,
+                plaintext_bytes: stored.descriptor.plaintext_bytes,
+                encrypted_bytes: stored.descriptor.encrypted_bytes,
+                media_category: "recovery_plan".to_owned(),
+                retention_class: "metadata".to_owned(),
+                created_at_us: current_time_us(),
+                expires_at_us: None,
+            })
+            .await
+            .map_err(|error| controller_internal("recovery_plan_store_failed", error))?;
+        self.store
+            .save_recovery_plan(RecoveryPlanRecord {
+                id: plan.id,
+                session_id: plan.session_id,
+                action: action_name(plan.action).to_owned(),
+                destination: plan.destination.to_string_lossy().into_owned(),
+                status: "prepared".to_owned(),
+                plan_digest: plan.plan_digest.clone(),
+                plan_blob_id: stored.descriptor.hex_digest,
+                created_at_us: plan.created_at_us,
+                executed_at_us: None,
+                result_blob_id: None,
+            })
+            .await
+            .map_err(|error| controller_internal("recovery_plan_store_failed", error))?;
+        Ok(())
     }
 
     async fn load_plan(
@@ -48,6 +93,18 @@ impl RecoveryCoordinator {
             .map_err(|error| controller_internal("recovery_plan_load_failed", error))?;
         let plan: RecoveryPlan = serde_json::from_slice(&bytes)
             .map_err(|error| controller_internal("recovery_plan_load_failed", error))?;
+        plan.verify_digest()
+            .map_err(|error| map_recovery_error(error, false))?;
+        if plan.id != record.id
+            || plan.session_id != record.session_id
+            || plan.plan_digest != record.plan_digest
+            || plan.destination.to_string_lossy() != record.destination
+        {
+            return Err(controller_internal(
+                "recovery_plan_stale",
+                "Stored recovery metadata does not match the authenticated plan.",
+            ));
+        }
         Ok((record, plan))
     }
 }
@@ -126,41 +183,7 @@ impl RecoveryController for RecoveryCoordinator {
         }
         .map_err(|error| map_recovery_error(error, false))?;
 
-        let plan_bytes = serde_json::to_vec(&plan)
-            .map_err(|error| controller_internal("recovery_plan_encode_failed", error))?;
-        let stored = self
-            .blobs
-            .put(&plan_bytes)
-            .map_err(|error| controller_internal("recovery_plan_store_failed", error))?;
-        self.store
-            .record_blob(BlobMetadata {
-                id: stored.descriptor.hex_digest.clone(),
-                digest: stored.descriptor.hex_digest.clone(),
-                format_version: stored.descriptor.format_version,
-                plaintext_bytes: stored.descriptor.plaintext_bytes,
-                encrypted_bytes: stored.descriptor.encrypted_bytes,
-                media_category: "recovery_plan".to_owned(),
-                retention_class: "metadata".to_owned(),
-                created_at_us: current_time_us(),
-                expires_at_us: None,
-            })
-            .await
-            .map_err(|error| controller_internal("recovery_plan_store_failed", error))?;
-        self.store
-            .save_recovery_plan(RecoveryPlanRecord {
-                id: plan.id,
-                session_id,
-                action: action_name(plan.action).to_owned(),
-                destination: plan.destination.to_string_lossy().into_owned(),
-                status: "prepared".to_owned(),
-                plan_digest: plan.plan_digest.clone(),
-                plan_blob_id: stored.descriptor.hex_digest,
-                created_at_us: plan.created_at_us,
-                executed_at_us: None,
-                result_blob_id: None,
-            })
-            .await
-            .map_err(|error| controller_internal("recovery_plan_store_failed", error))?;
+        self.persist_plan(&plan).await?;
         Ok(plan_view(&plan))
     }
 
@@ -184,6 +207,7 @@ impl RecoveryController for RecoveryCoordinator {
                 "Recovery execution requires explicit confirmation.",
             ));
         }
+        let _execution_guard = self.execution_lock.lock().await;
         let plan_id = parse_id(plan_id, "plan")?;
         let (mut record, plan) = self.load_plan(plan_id).await?;
         if request.plan_digest != plan.plan_digest || record.plan_digest != plan.plan_digest {
@@ -205,6 +229,21 @@ impl RecoveryController for RecoveryCoordinator {
                         "The pre-session Git state is unavailable.",
                     )
                 })?;
+            let git_root = agenttraceback_projects::git_root(Path::new(&git_state.repo_root))
+                .map_err(|error| controller_internal("recovery_git_root_failed", error))?;
+            let selected_root = std::fs::canonicalize(&git_state.repo_root)
+                .map_err(|error| controller_internal("recovery_git_root_failed", error))?;
+            if git_root
+                .as_deref()
+                .and_then(|path| std::fs::canonicalize(path).ok())
+                .as_ref()
+                != Some(&selected_root)
+            {
+                return Err(controller_internal(
+                    "recovery_git_scope_partial",
+                    "This snapshot covers a subdirectory. Reconstruct into a new directory instead of a Git worktree.",
+                ));
+            }
             let head_oid = git_state.head_oid.ok_or_else(|| {
                 controller_internal(
                     "recovery_git_head_unavailable",
@@ -236,9 +275,34 @@ impl RecoveryController for RecoveryCoordinator {
         } else {
             ConflictMode::Refuse
         };
+        let backup_plan = if plan.action == RecoveryAction::InPlaceRestore {
+            let (backup, descriptors) = backup_before_restore(&plan, &self.blobs, conflict_mode)
+                .map_err(|error| map_recovery_error(error, false))?;
+            for descriptor in descriptors {
+                self.store
+                    .record_blob(BlobMetadata {
+                        id: descriptor.hex_digest.clone(),
+                        digest: descriptor.hex_digest,
+                        format_version: descriptor.format_version,
+                        plaintext_bytes: descriptor.plaintext_bytes,
+                        encrypted_bytes: descriptor.encrypted_bytes,
+                        media_category: "pre_restore_backup".to_owned(),
+                        retention_class: "recovery".to_owned(),
+                        created_at_us: current_time_us(),
+                        expires_at_us: None,
+                    })
+                    .await
+                    .map_err(|error| controller_internal("recovery_backup_failed", error))?;
+            }
+            self.persist_plan(&backup).await?;
+            Some(backup)
+        } else {
+            None
+        };
         let run = RecoveryRunRecord {
             id: run_id,
             plan_id,
+            backup_plan_id: backup_plan.as_ref().map(|backup| backup.id),
             state: "running".to_owned(),
             restored_files: 0,
             skipped_files: 0,
@@ -252,7 +316,12 @@ impl RecoveryController for RecoveryCoordinator {
             .save_recovery_run(run.clone())
             .await
             .map_err(|error| controller_internal("recovery_run_store_failed", error))?;
-        let report = match execute(&plan, &self.blobs, &target_root, conflict_mode) {
+        let execution = if let Some(backup) = &backup_plan {
+            execute_with_backup_guard(&plan, backup, &self.blobs)
+        } else {
+            execute(&plan, &self.blobs, &target_root, conflict_mode)
+        };
+        let report = match execution {
             Ok(report) => report,
             Err(error) => {
                 let mut failed = run;
@@ -260,7 +329,13 @@ impl RecoveryController for RecoveryCoordinator {
                 failed.finished_at_us = Some(current_time_us());
                 failed.error_code = Some(error_code(&error).to_owned());
                 let _ = self.store.save_recovery_run(failed).await;
-                return Err(map_recovery_error(error, true));
+                let mut error = map_recovery_error(error, true);
+                if let Some(backup) = &backup_plan {
+                    error
+                        .message
+                        .push_str(&format!(" Pre-restore backup plan: {}.", backup.id));
+                }
+                return Err(error);
             }
         };
         let report_bytes = serde_json::json!({
@@ -373,6 +448,7 @@ fn run_view(run: &RecoveryRunRecord, destination: &Path) -> RecoveryRunView {
         conflict_files: run.conflict_files,
         destination: destination.to_string_lossy().into_owned(),
         error_code: run.error_code.clone(),
+        backup_plan_id: run.backup_plan_id.map(|id| id.to_string()),
     }
 }
 
@@ -452,4 +528,111 @@ fn current_time_us() -> i64 {
         .as_micros()
         .try_into()
         .unwrap_or(i64::MAX)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use agenttraceback_crypto::{BlobCipher, MasterKey};
+    use agenttraceback_store::{SessionRecord, SnapshotFileVersion};
+
+    #[tokio::test]
+    async fn in_place_api_persists_a_retrievable_undo_plan() {
+        let directory = tempfile::tempdir().expect("directory");
+        let store = Store::open(
+            directory.path().join("db"),
+            directory.path().join("backups"),
+        )
+        .await
+        .expect("store");
+        let blobs = BlobStore::open(
+            directory.path().join("blobs"),
+            BlobCipher::from_master_key(&MasterKey::generate()).expect("cipher"),
+        )
+        .expect("blobs");
+        let session_id = EntityId::new();
+        store
+            .create_session(SessionRecord {
+                id: session_id,
+                project_id: None,
+                title_preview: None,
+                state: "complete".to_owned(),
+                started_at_us: 1,
+                ended_at_us: Some(2),
+                agent_name: None,
+                harness_name: None,
+                provider_name: None,
+                model_name: None,
+                source_session_id: None,
+                outcome: "unknown".to_owned(),
+                outcome_confidence: "unknown".to_owned(),
+                recovery_coverage: "exact".to_owned(),
+                capture_health: "complete".to_owned(),
+            })
+            .await
+            .expect("session");
+        let workspace = directory.path().join("workspace");
+        std::fs::create_dir(&workspace).expect("workspace");
+        let path = workspace.join("file.txt");
+        std::fs::write(&path, b"uncommitted work").expect("current");
+        let stored = blobs.put(b"historical").expect("blob");
+        let plan = RecoveryPlan::in_place(
+            session_id,
+            "exact",
+            workspace,
+            &[SnapshotFileVersion {
+                file_version_id: EntityId::new(),
+                file_id: EntityId::new(),
+                display_path: "file.txt".to_owned(),
+                comparison_path: "file.txt".to_owned(),
+                content_hash: Some(stored.descriptor.hex_digest.clone()),
+                blob_id: Some(stored.descriptor.hex_digest),
+                byte_length: Some(10),
+                symlink_target: None,
+                capture_status: "hashed".to_owned(),
+                executable: false,
+            }],
+        )
+        .expect("plan");
+        let coordinator = RecoveryCoordinator::new(store.clone(), blobs);
+        coordinator.persist_plan(&plan).await.expect("persist");
+        let run = coordinator
+            .execute_recovery(
+                &plan.id.to_string(),
+                ExecuteRecoveryRequest {
+                    plan_digest: plan.plan_digest.clone(),
+                    confirm: true,
+                    overwrite_conflicts: false,
+                },
+            )
+            .await
+            .expect("restore");
+        assert_eq!(std::fs::read(&path).expect("restored"), b"historical");
+        let backup_id = run.backup_plan_id.expect("backup ID");
+        let fetched_run = coordinator
+            .get_recovery_run(&run.run_id)
+            .await
+            .expect("run");
+        assert_eq!(
+            fetched_run.backup_plan_id.as_deref(),
+            Some(backup_id.as_str())
+        );
+        let backup = coordinator
+            .get_recovery_plan(&backup_id)
+            .await
+            .expect("backup plan");
+        coordinator
+            .execute_recovery(
+                &backup_id,
+                ExecuteRecoveryRequest {
+                    plan_digest: backup.plan_digest,
+                    confirm: true,
+                    overwrite_conflicts: false,
+                },
+            )
+            .await
+            .expect("undo");
+        assert_eq!(std::fs::read(&path).expect("undone"), b"uncommitted work");
+        store.close().await.expect("close");
+    }
 }
