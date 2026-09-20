@@ -58,6 +58,26 @@ reported-only because the host effects were not captured retroactively.
 Prebuilt installers are produced by the release workflow. Credentials are external
 inputs; an unsigned development build is not presented as a production release.
 
+On Omarchy/Arch Linux x86_64, download the AppImage from the
+[alpha.2 release](https://github.com/btsouth/agenttraceback/releases/tag/v0.1.0-alpha.2),
+make it executable, and launch it:
+
+```bash
+chmod +x ~/Downloads/AgentTraceback_0.1.0-alpha.2_amd64.AppImage
+~/Downloads/AgentTraceback_0.1.0-alpha.2_amd64.AppImage
+```
+
+On the tested Omarchy machine with newer NVIDIA drivers, the bundled Wayland client
+library conflicts with the host EGL driver. This per-launch override uses the system
+Wayland client library and was verified to open the packaged desktop and start its daemon:
+
+```bash
+LD_PRELOAD=/usr/lib/libwayland-client.so.0 ~/Downloads/AgentTraceback_0.1.0-alpha.2_amd64.AppImage
+```
+
+This path is specific to Arch/Omarchy. It changes no system files. Alpha.1 desktop
+installers have an updater-initialization bug; use alpha.2 or later.
+
 From source:
 
 ```bash
