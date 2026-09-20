@@ -93,7 +93,7 @@ jobs:
         run: |
           sidecar_config='{"bundle":{"externalBin":["binaries/agenttracebackd","binaries/agenttraceback"]}}'
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$TAURI_UPDATER_PUBLIC_KEY" ]; then
-            sidecar_config="{\"bundle\":{\"externalBin\":[\"binaries/agenttracebackd\",\"binaries/agenttraceback\"],\"createUpdaterArtifacts\":true},\"plugins\":{\"updater\":{\"pubkey\":\"$TAURI_UPDATER_PUBLIC_KEY\",\"endpoints\":[\"https://github.com/agenttraceback-tools/agenttraceback/releases/latest/download/latest.json\"]}}}"
+            sidecar_config="{\"bundle\":{\"externalBin\":[\"binaries/agenttracebackd\",\"binaries/agenttraceback\"],\"createUpdaterArtifacts\":true},\"plugins\":{\"updater\":{\"pubkey\":\"$TAURI_UPDATER_PUBLIC_KEY\",\"endpoints\":[\"https://github.com/btsouth/agenttraceback/releases/latest/download/latest.json\"]}}}"
           fi
           pnpm --filter @agenttraceback/desktop tauri build \
             --target "${{ matrix.target }}" \
@@ -133,6 +133,7 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           path: release-artifacts
@@ -141,6 +142,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          release_flags=()
+          if [[ "${GITHUB_REF_NAME}" == *-* ]]; then
+            release_flags+=(--prerelease --notes-file docs/prerelease-notes.md)
+          fi
           gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
-            gh release create "${GITHUB_REF_NAME}" --generate-notes --title "AgentTraceback ${GITHUB_REF_NAME}"
+            gh release create "${GITHUB_REF_NAME}" --generate-notes --title "AgentTraceback ${GITHUB_REF_NAME}" "${release_flags[@]}"
           find release-artifacts -type f -maxdepth 8 -print0 | xargs -0 gh release upload "${GITHUB_REF_NAME}" --clobber

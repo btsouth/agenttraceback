@@ -31,8 +31,8 @@ edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
 authors = ["AgentTraceback Contributors"]
-homepage = "https://github.com/agenttraceback-tools/agenttraceback"
-repository = "https://github.com/agenttraceback-tools/agenttraceback"
+homepage = "https://github.com/btsouth/agenttraceback"
+repository = "https://github.com/btsouth/agenttraceback"
 
 [workspace.dependencies]
 anyhow = "1.0"
