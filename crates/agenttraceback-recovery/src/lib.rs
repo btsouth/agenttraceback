@@ -524,7 +524,7 @@ pub fn execute(
                 let bytes = blobs.get(&digest)?;
                 if plan.action == RecoveryAction::InPlaceRestore
                     && conflict_mode == ConflictMode::Refuse
-                    && hash_path(&destination)? != operation.expected_current_hash
+                    && operation_conflicts(operation, &destination)?
                 {
                     return Err(RecoveryError::Conflicts {
                         paths: vec![operation.relative_path.clone()],
@@ -548,7 +548,7 @@ pub fn execute(
                     ));
                 }
                 if conflict_mode == ConflictMode::Refuse
-                    && hash_path(&destination)? != operation.expected_current_hash
+                    && operation_conflicts(operation, &destination)?
                 {
                     return Err(RecoveryError::Conflicts {
                         paths: vec![operation.relative_path.clone()],
@@ -670,6 +670,21 @@ struct PlanDigestInput<'a> {
     exclusions: &'a [RecoveryExclusion],
 }
 
+// A partial restore may leave an undo target already in its desired state.
+fn operation_conflicts(operation: &RecoveryOperation, path: &Path) -> Result<bool, RecoveryError> {
+    let current = hash_path(path)?;
+    if operation.kind == RecoveryOperationKind::RemoveFile && current.is_none() {
+        return Ok(false);
+    }
+    if operation.kind == RecoveryOperationKind::WriteFile
+        && current.is_some()
+        && current == operation.expected_hash
+    {
+        return Ok(false);
+    }
+    Ok(current != operation.expected_current_hash)
+}
+
 fn conflict_paths(plan: &RecoveryPlan, target_root: &Path) -> Result<Vec<String>, RecoveryError> {
     if plan.action == RecoveryAction::GitRecoveryWorktree {
         return Ok(Vec::new());
@@ -678,7 +693,7 @@ fn conflict_paths(plan: &RecoveryPlan, target_root: &Path) -> Result<Vec<String>
     for operation in &plan.operations {
         let path = safe_join(target_root, &operation.relative_path)?;
         let has_conflict = if plan.action == RecoveryAction::InPlaceRestore {
-            hash_path(&path)? != operation.expected_current_hash
+            operation_conflicts(operation, &path)?
         } else {
             match fs::symlink_metadata(&path) {
                 Ok(_) => true,
@@ -1049,6 +1064,37 @@ mod tests {
         execute(&backup, &blobs, workspace.path(), ConflictMode::Refuse).expect("undo");
         assert!(!workspace.path().join("absent.txt").exists());
         assert_eq!(fs::read(&path).expect("undone"), b"uncommitted work");
+    }
+
+    #[test]
+    fn undo_partial_restore_accepts_files_never_created() {
+        let (_blob_directory, blobs) = blob_store();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let path = workspace.path().join("file.txt");
+        fs::write(&path, b"uncommitted work").expect("current");
+        fs::write(workspace.path().join("untouched.txt"), b"untouched work").expect("current");
+        let plan = RecoveryPlan::in_place(
+            EntityId::new(),
+            "exact",
+            workspace.path().to_path_buf(),
+            &[
+                version(&blobs, "file.txt", b"historical content"),
+                version(&blobs, "absent.txt", b"previously deleted"),
+                version(&blobs, "untouched.txt", b"old untouched"),
+            ],
+        )
+        .expect("plan");
+        let (backup, _) =
+            super::backup_before_restore(&plan, &blobs, ConflictMode::Refuse).expect("backup");
+        // Simulate interruption after replacing one file, before creating the other.
+        fs::write(&path, b"historical content").expect("partial restore");
+        execute(&backup, &blobs, workspace.path(), ConflictMode::Refuse).expect("undo");
+        assert_eq!(fs::read(&path).expect("undone"), b"uncommitted work");
+        assert!(!workspace.path().join("absent.txt").exists());
+        assert_eq!(
+            fs::read(workspace.path().join("untouched.txt")).expect("untouched"),
+            b"untouched work"
+        );
     }
 
     #[test]

@@ -40,6 +40,11 @@
     "shortDescription": "Verified record and recovery for AI coding-agent runs",
     "longDescription": "Every agent. Every action. One timeline. AgentTraceback is a local-first verified record and recovery tool for AI coding-agent runs.",
     "copyright": "Copyright AgentTraceback Contributors",
+    "windows": {
+      "wix": {
+        "version": "0.0.1"
+      }
+    },
     "macOS": {
       "minimumSystemVersion": "13.0"
     }
