@@ -72,7 +72,7 @@ dependencies = [
  "agenttraceback-types",
  "async-trait",
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "hex",
  "serde",
@@ -145,7 +145,7 @@ dependencies = [
 name = "agenttraceback-crypto"
 version = "0.1.0-dev"
 dependencies = [
- "base64 0.22.1",
+ "base64 0.23.1",
  "blake3",
  "chacha20poly1305",
  "ed25519-dalek",
@@ -239,7 +239,7 @@ name = "agenttraceback-export"
 version = "0.1.0-dev"
 dependencies = [
  "agenttraceback-types",
- "base64 0.22.1",
+ "base64 0.23.1",
  "regex",
  "serde",
  "serde_json",

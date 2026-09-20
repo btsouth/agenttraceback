@@ -38,7 +38,7 @@ repository = "https://github.com/agenttraceback-tools/agenttraceback"
 anyhow = "1.0"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["ws"] }
-base64 = "0.22"
+base64 = "0.23"
 agenttraceback-adapter-sdk = { version = "0.1.0-dev", path = "crates/agenttraceback-adapter-sdk" }
 agenttraceback-adapters = { version = "0.1.0-dev", path = "crates/agenttraceback-adapters" }
 agenttraceback-api = { version = "0.1.0-dev", path = "crates/agenttraceback-api" }
