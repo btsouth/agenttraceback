@@ -122,7 +122,7 @@ version = "0.1.0-dev"
 dependencies = [
  "agenttraceback-types",
  "hex",
- "rand 0.9.5",
+ "rand 0.10.3",
  "serde",
  "serde_json",
  "tempfile",
@@ -152,7 +152,7 @@ dependencies = [
  "hex",
  "hkdf 0.12.4",
  "keyring",
- "rand 0.9.5",
+ "rand 0.10.3",
  "serde",
  "serde_jcs",
  "serde_json",
