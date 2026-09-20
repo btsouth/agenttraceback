@@ -1,7 +1,7 @@
-use std::{fs, io, path::Path};
+use std::{io, path::Path};
 
 #[cfg(any(target_os = "linux", target_os = "macos"))]
-use std::{env, path::PathBuf};
+use std::{env, fs, path::PathBuf};
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 use std::process::Command;
@@ -228,6 +228,7 @@ fn startup_status() -> Result<StartupStatus, StartupError> {
     Err(StartupError::MissingDirectory("supported operating system"))
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn home() -> Option<PathBuf> {
     env::var_os("HOME")
         .or_else(|| env::var_os("USERPROFILE"))
