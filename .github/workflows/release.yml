@@ -99,12 +99,6 @@ jobs:
             --target "${{ matrix.target }}" \
             --bundles "${{ matrix.bundles }}" \
             --config "$sidecar_config"
-      - name: Generate checksums
-        shell: bash
-        run: |
-          find target -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' -o -name '*.msi' -o -name '*.exe' -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.sig' \) -print0 \
-            | sort -z \
-            | xargs -0 sha256sum > "${{ matrix.name }}-SHA256SUMS"
       - name: Generate shell completions
         shell: bash
         run: |
@@ -112,19 +106,13 @@ jobs:
           for shell in bash zsh fish powershell; do
             cargo run --release -p agenttraceback-cli -- completions "$shell" > "release-completions/agenttraceback.$shell"
           done
+      - name: Stage distributable assets and checksums
+        shell: bash
+        run: python3 scripts/stage-release.py "${{ matrix.target }}" "${{ matrix.name }}"
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.name }}
-          path: |
-            target/**/bundle/**
-            target/release/agenttraceback
-            target/release/agenttracebackd
-            target/release/agenttraceback-desktop
-            target/release/agenttraceback.exe
-            target/release/agenttracebackd.exe
-            target/release/agenttraceback-desktop.exe
-            ${{ matrix.name }}-SHA256SUMS
-            release-completions/**
+          path: release-staged/*
           if-no-files-found: error
 
   publish:
@@ -149,4 +137,4 @@ jobs:
           fi
           gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
             gh release create "${GITHUB_REF_NAME}" --generate-notes --title "AgentTraceback ${GITHUB_REF_NAME}" "${release_flags[@]}"
-          find release-artifacts -type f -maxdepth 8 -print0 | xargs -0 gh release upload "${GITHUB_REF_NAME}" --clobber
+          find release-artifacts -maxdepth 1 -type f -print0 | xargs -0 gh release upload "${GITHUB_REF_NAME}" --clobber
