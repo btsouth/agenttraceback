@@ -112,7 +112,7 @@ jobs:
           for shell in bash zsh fish powershell; do
             cargo run --release -p agenttraceback-cli -- completions "$shell" > "release-completions/agenttraceback.$shell"
           done
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.name }}
           path: |
