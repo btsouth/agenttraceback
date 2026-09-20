@@ -10,6 +10,7 @@ use agenttraceback_types::RuntimeMetadata;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+#[cfg(target_os = "linux")]
 const APP_NAME: &str = "agenttraceback";
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 const DISPLAY_APP_NAME: &str = "AgentTraceback";
@@ -385,6 +386,7 @@ fn platform_runtime_file_inner() -> Result<PathBuf, ConfigError> {
     ))
 }
 
+#[cfg(any(target_os = "linux", target_os = "macos"))]
 fn dirs_home() -> Option<PathBuf> {
     env::var_os("HOME")
         .or_else(|| env::var_os("USERPROFILE"))
