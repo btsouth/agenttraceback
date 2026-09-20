@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-adapter-sdk"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-types",
  "async-trait",
@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-adapters"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-adapter-sdk",
  "agenttraceback-types",
@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-api"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-adapter-sdk",
  "agenttraceback-blobs",
@@ -88,7 +88,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-blobs"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-crypto",
  "blake3",
@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-cli"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-adapter-sdk",
  "agenttraceback-api",
@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-config"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-types",
  "hex",
@@ -133,7 +133,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-correlation"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-types",
  "serde",
@@ -143,7 +143,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-crypto"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -166,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-daemon"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-adapter-sdk",
  "agenttraceback-adapters",
@@ -198,7 +198,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-desktop"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-api",
  "agenttraceback-config",
@@ -215,7 +215,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-events"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-blobs",
  "agenttraceback-correlation",
@@ -236,7 +236,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-export"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-types",
  "base64 0.22.1",
@@ -248,7 +248,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-platform"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-types",
  "crossterm",
@@ -264,7 +264,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-projects"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-types",
  "globset",
@@ -275,7 +275,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-recovery"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-blobs",
  "agenttraceback-crypto",
@@ -291,7 +291,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-risk"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-types",
  "regex",
@@ -302,7 +302,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-search"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "chrono",
  "thiserror 2.0.20",
@@ -310,7 +310,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-snapshots"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-crypto",
  "agenttraceback-projects",
@@ -328,7 +328,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-store"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "agenttraceback-crypto",
  "agenttraceback-search",
@@ -346,7 +346,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-types"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -1888,7 +1888,7 @@ checksum = "ef25905e51abafe4dcea6c15fec58c57b601cdbd0ee53d22ea1d3016c587d39b"
 
 [[package]]
 name = "fixture-agent"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "anyhow",
  "chrono",
@@ -7139,7 +7139,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0-alpha.1"
+version = "0.1.0-alpha.2"
 dependencies = [
  "anyhow",
  "clap",

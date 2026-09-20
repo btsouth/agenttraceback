@@ -409,6 +409,16 @@ fn sibling_daemon_path(current: &Path) -> PathBuf {
         .join(binary_name)
 }
 
+// Unsigned alpha builds omit updater configuration entirely. Registering the
+// plugin in those builds fails during initialization before a window can open.
+fn updater_is_configured(config: &tauri::Config) -> bool {
+    config
+        .plugins
+        .0
+        .get("updater")
+        .is_some_and(|value| !value.is_null())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let paths = PlatformPaths::discover().expect("platform paths");
@@ -419,8 +429,12 @@ pub fn run() {
         .expect("local API client");
     let state = DesktopState { paths, client };
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_updater::Builder::new().build())
+    let context = tauri::generate_context!();
+    let mut builder = tauri::Builder::default();
+    if updater_is_configured(context.config()) {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+    builder
         .plugin(tauri_plugin_process::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
@@ -439,7 +453,7 @@ pub fn run() {
             plan_recovery,
             execute_recovery,
         ])
-        .run(tauri::generate_context!())
+        .run(context)
         .expect("error while running AgentTraceback desktop application");
 }
 
@@ -447,7 +461,27 @@ pub fn run() {
 mod tests {
     use std::path::Path;
 
-    use super::sibling_daemon_path;
+    use super::{sibling_daemon_path, updater_is_configured};
+
+    #[test]
+    fn updater_is_optional_for_unsigned_desktop_builds() {
+        let mut config: tauri::Config = serde_json::from_str(include_str!("../tauri.conf.json"))
+            .expect("shipping desktop configuration");
+        assert!(!updater_is_configured(&config));
+        config
+            .plugins
+            .0
+            .insert("updater".into(), serde_json::Value::Null);
+        assert!(!updater_is_configured(&config));
+        config.plugins.0.insert(
+            "updater".into(),
+            serde_json::json!({
+                "pubkey": "configured-by-release-workflow",
+                "endpoints": ["https://example.com/latest.json"]
+            }),
+        );
+        assert!(updater_is_configured(&config));
+    }
 
     #[test]
     fn daemon_binary_is_resolved_as_a_sibling() {

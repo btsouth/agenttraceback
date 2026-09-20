@@ -39,7 +39,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xvfb xauth xdotool
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.98.0
@@ -111,6 +111,12 @@ jobs:
             --target "${{ matrix.target }}" \
             --bundles "${{ matrix.bundles }}" \
             --config "$sidecar_config"
+      - name: Smoke test packaged Linux desktop startup
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          xvfb-run -a python3 scripts/desktop-startup-smoke.py \
+            target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
       - name: Generate shell completions
         shell: bash
         run: |

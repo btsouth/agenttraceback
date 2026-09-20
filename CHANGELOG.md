@@ -3,6 +3,14 @@
 All notable changes are documented here. AgentTraceback follows Semantic Versioning after
 the first public release.
 
+## 0.1.0-alpha.2 — 2026-09-20
+
+### Fixed
+
+- Fixed desktop startup when unsigned builds omit updater configuration.
+- Added a packaged Linux desktop startup check before release asset publication.
+- Corrected README animation timing and invalidated the cached image URL.
+
 ## 0.1.0-alpha.1 — 2026-09-20
 
 ### Fixed
