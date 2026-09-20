@@ -100,6 +100,13 @@ jobs:
           if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$TAURI_UPDATER_PUBLIC_KEY" ]; then
             sidecar_config="{\"bundle\":{\"externalBin\":[\"binaries/agenttracebackd\",\"binaries/agenttraceback\"],\"createUpdaterArtifacts\":true},\"plugins\":{\"updater\":{\"pubkey\":\"$TAURI_UPDATER_PUBLIC_KEY\",\"endpoints\":[\"https://github.com/btsouth/agenttraceback/releases/latest/download/latest.json\"]}}}"
           fi
+          # Tauri treats an empty Apple certificate variable as a supplied
+          # certificate. Missing optional secrets must be absent from the env.
+          for signing_variable in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            if [ -z "${!signing_variable}" ]; then
+              unset "$signing_variable"
+            fi
+          done
           pnpm --filter @agenttraceback/desktop tauri build \
             --target "${{ matrix.target }}" \
             --bundles "${{ matrix.bundles }}" \
