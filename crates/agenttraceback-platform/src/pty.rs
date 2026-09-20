@@ -6,6 +6,9 @@ use std::{
     time::Duration,
 };
 
+#[cfg(windows)]
+use std::io::IsTerminal;
+
 use crossterm::terminal::{disable_raw_mode, enable_raw_mode, is_raw_mode_enabled};
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use thiserror::Error;
@@ -87,6 +90,13 @@ pub fn run_pty(options: PtyOptions) -> Result<PtyOutcome, PtyError> {
         .master
         .take_writer()
         .map_err(|error| PtyError::Pty(error.to_string()))?;
+    // portable-pty enables ConPTY cursor inheritance. Redirected stdin cannot
+    // answer its initial cursor-position query, so supply a valid origin.
+    #[cfg(windows)]
+    if !io::stdin().is_terminal() {
+        writer.write_all(b"\x1b[1;1R")?;
+        writer.flush()?;
+    }
     let callback = options.output_callback;
     let reader_callback = callback.clone();
     #[cfg(windows)]
