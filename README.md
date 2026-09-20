@@ -9,7 +9,7 @@ runs. It shows what an agent reported, what the host independently observed, wha
 changed, what was risky, and how to reconstruct earlier state safely. It is not a
 guard, blocker, or generic activity dashboard.
 
-> **Release status:** this repository is an internal v0.1 release candidate. The
+> **Release status:** this repository is the public v0.1.0-alpha.1 development line. The
 > product UI, five semantic adapters, Command Code detection profile, encrypted
 > storage, recovery, redacted exports, demo dataset, installers, startup management,
 > and signed-update build hooks are implemented. Public `v0.1.0` remains gated on

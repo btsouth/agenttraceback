@@ -26,7 +26,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.0-dev"
+version = "0.1.0-alpha.1"
 edition = "2024"
 rust-version = "1.89"
 license = "Apache-2.0"
@@ -39,24 +39,24 @@ anyhow = "1.0"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
-agenttraceback-adapter-sdk = { version = "0.1.0-dev", path = "crates/agenttraceback-adapter-sdk" }
-agenttraceback-adapters = { version = "0.1.0-dev", path = "crates/agenttraceback-adapters" }
-agenttraceback-api = { version = "0.1.0-dev", path = "crates/agenttraceback-api" }
-agenttraceback-blobs = { version = "0.1.0-dev", path = "crates/agenttraceback-blobs" }
-agenttraceback-config = { version = "0.1.0-dev", path = "crates/agenttraceback-config" }
-agenttraceback-correlation = { version = "0.1.0-dev", path = "crates/agenttraceback-correlation" }
-agenttraceback-crypto = { version = "0.1.0-dev", path = "crates/agenttraceback-crypto" }
-agenttraceback-daemon = { version = "0.1.0-dev", path = "crates/agenttraceback-daemon" }
-agenttraceback-events = { version = "0.1.0-dev", path = "crates/agenttraceback-events" }
-agenttraceback-export = { version = "0.1.0-dev", path = "crates/agenttraceback-export" }
-agenttraceback-platform = { version = "0.1.0-dev", path = "crates/agenttraceback-platform" }
-agenttraceback-projects = { version = "0.1.0-dev", path = "crates/agenttraceback-projects" }
-agenttraceback-recovery = { version = "0.1.0-dev", path = "crates/agenttraceback-recovery" }
-agenttraceback-risk = { version = "0.1.0-dev", path = "crates/agenttraceback-risk" }
-agenttraceback-search = { version = "0.1.0-dev", path = "crates/agenttraceback-search" }
-agenttraceback-snapshots = { version = "0.1.0-dev", path = "crates/agenttraceback-snapshots" }
-agenttraceback-store = { version = "0.1.0-dev", path = "crates/agenttraceback-store" }
-agenttraceback-types = { version = "0.1.0-dev", path = "crates/agenttraceback-types" }
+agenttraceback-adapter-sdk = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-adapter-sdk" }
+agenttraceback-adapters = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-adapters" }
+agenttraceback-api = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-api" }
+agenttraceback-blobs = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-blobs" }
+agenttraceback-config = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-config" }
+agenttraceback-correlation = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-correlation" }
+agenttraceback-crypto = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-crypto" }
+agenttraceback-daemon = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-daemon" }
+agenttraceback-events = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-events" }
+agenttraceback-export = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-export" }
+agenttraceback-platform = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-platform" }
+agenttraceback-projects = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-projects" }
+agenttraceback-recovery = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-recovery" }
+agenttraceback-risk = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-risk" }
+agenttraceback-search = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-search" }
+agenttraceback-snapshots = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-snapshots" }
+agenttraceback-store = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-store" }
+agenttraceback-types = { version = "0.1.0-alpha.1", path = "crates/agenttraceback-types" }
 blake3 = "1.8"
 bytes = "1.10"
 chacha20poly1305 = "0.11"

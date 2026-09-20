@@ -3,7 +3,23 @@
 All notable changes are documented here. AgentTraceback follows Semantic Versioning after
 the first public release.
 
-## Unreleased
+## 0.1.0-alpha.1 — 2026-09-20
+
+### Fixed
+
+- Fixed Windows/macOS conditional compilation and cross-platform stale runtime cleanup.
+- Preserved global-chain recording and search-index consistency after audited deletion.
+- Added encrypted pre-restore backup plans and undo references for in-place recovery.
+- Refused populated reconstruction destinations, single-file overwrites, and stale files.
+- Prevented replacement-key creation when encrypted data already exists.
+- Bound hook execution to the server-generated approval plan.
+- Bounded JSONL batch reads and redacted imported session titles before persistence.
+- Escaped untrusted Markdown fields and kept project capture inside the selected directory.
+- Disabled Git hooks, filesystem monitors, and configured content filters during capture;
+  recovery worktrees are created without checkout.
+- Labeled unsigned integrity roots honestly and clarified their verification scope.
+- Paused automated dependency version PRs during launch stabilization.
+
 
 ### Added
 
