@@ -44,7 +44,7 @@ jobs:
         with:
           toolchain: 1.98.0
           targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 10.17.1
       - uses: actions/setup-node@v4
