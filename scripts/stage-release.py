@@ -15,7 +15,9 @@ def stage(target: str, name: str) -> None:
     output.mkdir(exist_ok=False)
     bundle = Path("target") / target / "release" / "bundle"
     suffixes = (".AppImage", ".deb", ".rpm", ".dmg", ".msi", ".exe", ".tar.gz", ".zip", ".sig")
-    installers = [path for path in bundle.rglob("*") if path.is_file() and path.name.endswith(suffixes)]
+    # Final assets live directly in bundle/<format>; deeper files are build
+    # internals (for example Debian control.tar.gz and data.tar.gz).
+    installers = [path for path in bundle.glob("*/*") if path.is_file() and path.name.endswith(suffixes)]
     if not installers:
         raise RuntimeError(f"No distributable installers found in {bundle}")
     for source in installers:
