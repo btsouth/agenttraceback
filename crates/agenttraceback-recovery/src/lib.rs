@@ -351,7 +351,10 @@ pub fn execute(
                     .ok_or_else(|| RecoveryError::NotRestorable(operation.relative_path.clone()))?;
                 let digest = parse_digest(blob_id)?;
                 let bytes = blobs.get(&digest)?;
-                write_file(&destination, &bytes, operation.executable)?;
+                let replace_existing = plan.action == RecoveryAction::InPlaceRestore
+                    || plan.action == RecoveryAction::GitRecoveryWorktree
+                    || conflict_mode == ConflictMode::Overwrite;
+                write_file(&destination, &bytes, operation.executable, replace_existing)?;
                 if let Some(expected) = &operation.expected_hash
                     && hash_path(&destination)?.as_deref() != Some(expected)
                 {
@@ -464,14 +467,22 @@ struct PlanDigestInput<'a> {
 }
 
 fn conflict_paths(plan: &RecoveryPlan, target_root: &Path) -> Result<Vec<String>, RecoveryError> {
-    if plan.action != RecoveryAction::InPlaceRestore {
+    if plan.action == RecoveryAction::GitRecoveryWorktree {
         return Ok(Vec::new());
     }
     let mut conflicts = Vec::new();
     for operation in &plan.operations {
         let path = safe_join(target_root, &operation.relative_path)?;
-        let current = hash_path(&path)?;
-        if current.is_some() && current != operation.expected_current_hash {
+        let has_conflict = if plan.action == RecoveryAction::InPlaceRestore {
+            hash_path(&path)? != operation.expected_current_hash
+        } else {
+            match fs::symlink_metadata(&path) {
+                Ok(_) => true,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => false,
+                Err(source) => return Err(RecoveryError::Io { path, source }),
+            }
+        };
+        if has_conflict {
             conflicts.push(operation.relative_path.clone());
         }
     }
@@ -527,7 +538,12 @@ fn safe_join(root: &Path, relative: &str) -> Result<PathBuf, RecoveryError> {
     Ok(destination)
 }
 
-fn write_file(path: &Path, bytes: &[u8], executable: bool) -> Result<(), RecoveryError> {
+fn write_file(
+    path: &Path,
+    bytes: &[u8],
+    executable: bool,
+    replace_existing: bool,
+) -> Result<(), RecoveryError> {
     let parent = path
         .parent()
         .ok_or_else(|| RecoveryError::UnsafePath(path.to_path_buf()))?;
@@ -542,7 +558,12 @@ fn write_file(path: &Path, bytes: &[u8], executable: bool) -> Result<(), Recover
             path: path.to_path_buf(),
             source,
         })?;
-    temporary.persist(path).map_err(|error| RecoveryError::Io {
+    let result = if replace_existing {
+        temporary.persist(path)
+    } else {
+        temporary.persist_noclobber(path)
+    };
+    result.map_err(|error| RecoveryError::Io {
         path: path.to_path_buf(),
         source: error.error,
     })?;
@@ -721,6 +742,61 @@ mod tests {
         let result = execute(&plan, &blobs, workspace.path(), ConflictMode::Refuse);
         assert!(matches!(result, Err(RecoveryError::Conflicts { .. })));
         assert_eq!(fs::read(&path).expect("unchanged"), b"after");
+    }
+
+    #[test]
+    fn reconstruction_refuses_existing_file() {
+        let (_blob_directory, blobs) = blob_store();
+        let destination = tempfile::tempdir().expect("destination");
+        let path = destination.path().join("file.txt");
+        fs::write(&path, b"user content").expect("existing file");
+        let plan = RecoveryPlan::reconstruct_pre_session(
+            EntityId::new(),
+            "exact",
+            destination.path().to_path_buf(),
+            &[version(&blobs, "file.txt", b"snapshot content")],
+        )
+        .expect("plan");
+        let result = execute(&plan, &blobs, destination.path(), ConflictMode::Refuse);
+        assert!(matches!(result, Err(RecoveryError::Conflicts { .. })));
+        assert_eq!(fs::read(path).expect("preserved file"), b"user content");
+    }
+
+    #[test]
+    fn single_file_restore_refuses_existing_file() {
+        let (_blob_directory, blobs) = blob_store();
+        let destination = tempfile::tempdir().expect("destination");
+        let path = destination.path().join("file.txt");
+        fs::write(&path, b"user content").expect("existing file");
+        let plan = RecoveryPlan::restore_single_file(
+            EntityId::new(),
+            "exact",
+            path.clone(),
+            &version(&blobs, "source.txt", b"snapshot content"),
+        )
+        .expect("plan");
+        let result = execute(&plan, &blobs, destination.path(), ConflictMode::Refuse);
+        assert!(matches!(result, Err(RecoveryError::Conflicts { .. })));
+        assert_eq!(fs::read(path).expect("preserved file"), b"user content");
+    }
+
+    #[test]
+    fn in_place_restore_refuses_file_deleted_after_planning() {
+        let (_blob_directory, blobs) = blob_store();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let path = workspace.path().join("file.txt");
+        fs::write(&path, b"current content").expect("existing file");
+        let plan = RecoveryPlan::in_place(
+            EntityId::new(),
+            "exact",
+            workspace.path().to_path_buf(),
+            &[version(&blobs, "file.txt", b"snapshot content")],
+        )
+        .expect("plan");
+        fs::remove_file(&path).expect("user deletes file");
+        let result = execute(&plan, &blobs, workspace.path(), ConflictMode::Refuse);
+        assert!(matches!(result, Err(RecoveryError::Conflicts { .. })));
+        assert!(!path.exists());
     }
 
     #[test]
