@@ -83,7 +83,7 @@ serde_jcs = "0.2"
 serde_json = "1.0"
 sha2 = "0.10"
 shell-words = "1.1"
-similar = "2.7"
+similar = "3.2"
 subtle = "2.6"
 sysinfo = "0.38"
 tauri = { version = "2.8", features = [] }
