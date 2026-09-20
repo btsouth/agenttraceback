@@ -1,9 +1,12 @@
 use std::{
-    fs::{self, File},
+    fs,
     io::{self, Write},
     path::{Path, PathBuf},
     sync::Arc,
 };
+
+#[cfg(unix)]
+use std::fs::File;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hkdf::Hkdf;
