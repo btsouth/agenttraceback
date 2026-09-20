@@ -2,7 +2,7 @@
 
 **Every agent. Every action. One timeline.**
 
-![AgentTraceback launch demo](docs/assets/demo.gif)
+![AgentTraceback launch demo](docs/assets/demo-paced.gif)
 
 AgentTraceback is a local-first verified record and recovery tool for AI coding-agent
 runs. It shows what an agent reported, what the host independently observed, what
