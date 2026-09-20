@@ -48,8 +48,8 @@ BLAKE3 digest or fail visibly. Partial bytes are never reported as success.
 Every in-place restore saves an encrypted backup plan before modifying files. The
 run retains `backupPlanId` even if execution fails. The CLI prints that plan ID and
 an undo command; it can also be retrieved through the recovery-run API. Execute
-that plan with explicit confirmation to recover the previous contents. Undo itself
-also creates a fresh backup. Files changed after backup capture are refused.
+that plan with explicit confirmation to recover the previous contents. Undo also removes restore-created files if their hashes still match, and itself
+creates a fresh backup. Files changed after backup capture are refused.
 
 New-directory reconstruction requires an empty destination. Single-file recovery
 never overwrites an existing destination. `--overwrite-conflicts` applies only to

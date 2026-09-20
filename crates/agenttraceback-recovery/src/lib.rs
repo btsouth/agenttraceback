@@ -46,6 +46,8 @@ pub enum RecoveryOperationKind {
     WriteFile,
     /// Create a symlink without following it.
     CreateSymlink,
+    /// Remove a file created by a prior restore when executing its undo plan.
+    RemoveFile,
 }
 
 /// One planned recovery operation.
@@ -304,6 +306,16 @@ pub enum RecoveryError {
     /// A source version has no restorable content.
     #[error("file version is not restorable: {0}")]
     NotRestorable(String),
+    /// Current content is too large to back up before an in-place write.
+    #[error(
+        "current file {path} exceeds the {limit}-byte pre-restore backup limit; no restore was performed"
+    )]
+    BackupTooLarge {
+        /// Current file that must be backed up first.
+        path: PathBuf,
+        /// Maximum supported backup size in bytes.
+        limit: u64,
+    },
     /// A prepared plan was changed.
     #[error("recovery plan digest does not match its contents")]
     PlanDigestMismatch,
@@ -339,13 +351,32 @@ pub fn backup_before_restore(
         let path = safe_join(&plan.destination, &operation.relative_path)?;
         let metadata = match fs::symlink_metadata(&path) {
             Ok(metadata) => metadata,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                operations.push(RecoveryOperation {
+                    relative_path: operation.relative_path.clone(),
+                    kind: RecoveryOperationKind::RemoveFile,
+                    source_version_id: EntityId::new(),
+                    blob_id: None,
+                    expected_hash: None,
+                    expected_current_hash: operation.expected_hash.clone(),
+                    byte_length: None,
+                    executable: false,
+                    symlink_target: None,
+                });
+                continue;
+            }
             Err(source) => return Err(RecoveryError::Io { path, source }),
         };
         if !metadata.is_file() || metadata.file_type().is_symlink() {
             return Err(RecoveryError::UnsafePath(path));
         }
         const MAX_BACKUP_BYTES: u64 = 64 * 1024 * 1024;
+        if metadata.len() > MAX_BACKUP_BYTES {
+            return Err(RecoveryError::BackupTooLarge {
+                path,
+                limit: MAX_BACKUP_BYTES,
+            });
+        }
         let file = fs::File::open(&path).map_err(|source| RecoveryError::Io {
             path: path.clone(),
             source,
@@ -358,9 +389,10 @@ pub fn backup_before_restore(
                 source,
             })?;
         if bytes.len() as u64 > MAX_BACKUP_BYTES {
-            return Err(RecoveryError::NotRestorable(
-                operation.relative_path.clone(),
-            ));
+            return Err(RecoveryError::BackupTooLarge {
+                path,
+                limit: MAX_BACKUP_BYTES,
+            });
         }
         let stored = blobs.put(&bytes)?;
         #[cfg(unix)]
@@ -455,6 +487,13 @@ pub fn execute(
     }
     for operation in &plan.operations {
         safe_join(target_root, &operation.relative_path)?;
+        if operation.kind == RecoveryOperationKind::RemoveFile
+            && plan.action != RecoveryAction::InPlaceRestore
+        {
+            return Err(RecoveryError::NotRestorable(
+                operation.relative_path.clone(),
+            ));
+        }
         if operation.kind == RecoveryOperationKind::WriteFile {
             let digest =
                 parse_digest(operation.blob_id.as_deref().ok_or_else(|| {
@@ -500,6 +539,30 @@ pub fn execute(
                     && hash_path(&destination)?.as_deref() != Some(expected)
                 {
                     return Err(RecoveryError::HashMismatch(operation.relative_path.clone()));
+                }
+            }
+            RecoveryOperationKind::RemoveFile => {
+                if plan.action != RecoveryAction::InPlaceRestore {
+                    return Err(RecoveryError::NotRestorable(
+                        operation.relative_path.clone(),
+                    ));
+                }
+                if conflict_mode == ConflictMode::Refuse
+                    && hash_path(&destination)? != operation.expected_current_hash
+                {
+                    return Err(RecoveryError::Conflicts {
+                        paths: vec![operation.relative_path.clone()],
+                    });
+                }
+                match fs::remove_file(&destination) {
+                    Ok(()) => {}
+                    Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                    Err(source) => {
+                        return Err(RecoveryError::Io {
+                            path: destination,
+                            source,
+                        });
+                    }
                 }
             }
             RecoveryOperationKind::CreateSymlink => {
@@ -963,7 +1026,10 @@ mod tests {
             EntityId::new(),
             "exact",
             workspace.path().to_path_buf(),
-            &[version(&blobs, "file.txt", b"historical content")],
+            &[
+                version(&blobs, "file.txt", b"historical content"),
+                version(&blobs, "absent.txt", b"previously deleted"),
+            ],
         )
         .expect("plan");
         let (backup, descriptors) =
@@ -971,7 +1037,17 @@ mod tests {
         assert_eq!(descriptors.len(), 1);
         execute(&plan, &blobs, workspace.path(), ConflictMode::Refuse).expect("restore");
         assert_eq!(fs::read(&path).expect("restored"), b"historical content");
+        assert!(workspace.path().join("absent.txt").exists());
+        fs::write(workspace.path().join("absent.txt"), b"new user edit").expect("new edit");
+        assert!(execute(&backup, &blobs, workspace.path(), ConflictMode::Refuse).is_err());
+        assert_eq!(
+            fs::read(&path).expect("no partial undo"),
+            b"historical content"
+        );
+        fs::write(workspace.path().join("absent.txt"), b"previously deleted")
+            .expect("reset fixture");
         execute(&backup, &blobs, workspace.path(), ConflictMode::Refuse).expect("undo");
+        assert!(!workspace.path().join("absent.txt").exists());
         assert_eq!(fs::read(&path).expect("undone"), b"uncommitted work");
     }
 

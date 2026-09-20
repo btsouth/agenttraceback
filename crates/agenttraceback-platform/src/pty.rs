@@ -89,13 +89,21 @@ pub fn run_pty(options: PtyOptions) -> Result<PtyOutcome, PtyError> {
         .map_err(|error| PtyError::Pty(error.to_string()))?;
     let callback = options.output_callback;
     let reader_callback = callback.clone();
+    #[cfg(windows)]
+    let (input_release, input_wait) = std::sync::mpsc::channel::<()>();
     std::thread::Builder::new()
         .name("agenttraceback-pty-output".to_owned())
         .spawn(move || copy_output(&mut reader, reader_callback))
         .map_err(PtyError::Io)?;
     std::thread::Builder::new()
         .name("agenttraceback-pty-input".to_owned())
-        .spawn(move || copy_input(&mut writer))
+        .spawn(move || {
+            copy_input(&mut writer);
+            // Closing ConPTY's input pipe on redirected stdin EOF terminates
+            // the console session. Keep it open until the child has exited.
+            #[cfg(windows)]
+            let _ = input_wait.recv();
+        })
         .map_err(PtyError::Io)?;
 
     let _raw_mode = RawModeGuard::enable();
@@ -113,6 +121,8 @@ pub fn run_pty(options: PtyOptions) -> Result<PtyOutcome, PtyError> {
         }
         std::thread::sleep(Duration::from_millis(100));
     };
+    #[cfg(windows)]
+    drop(input_release);
     Ok(PtyOutcome {
         exit_code: status.exit_code(),
         signal: status.signal().map(str::to_owned),

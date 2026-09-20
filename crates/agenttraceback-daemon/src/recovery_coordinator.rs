@@ -419,6 +419,7 @@ fn plan_view(plan: &RecoveryPlan) -> RecoveryPlanView {
                 kind: match operation.kind {
                     RecoveryOperationKind::WriteFile => "write_file",
                     RecoveryOperationKind::CreateSymlink => "create_symlink",
+                    RecoveryOperationKind::RemoveFile => "remove_file",
                 }
                 .to_owned(),
                 expected_hash: operation.expected_hash.clone(),
@@ -503,6 +504,7 @@ fn error_code(error: &RecoveryError) -> &'static str {
         RecoveryError::HashMismatch(_) => "recovery_hash_mismatch",
         RecoveryError::PlanDigestMismatch => "recovery_plan_stale",
         RecoveryError::NotRestorable(_) => "recovery_not_restorable",
+        RecoveryError::BackupTooLarge { .. } => "recovery_backup_too_large",
         RecoveryError::Git(_) => "recovery_git_failed",
         RecoveryError::Io { .. } | RecoveryError::Blob(_) | RecoveryError::Canonical(_) => {
             "recovery_io_failed"

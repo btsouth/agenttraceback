@@ -1,6 +1,6 @@
 use std::{
     fs::File,
-    io::{Read, Seek, SeekFrom},
+    io::{BufRead, BufReader, Read, Seek, SeekFrom},
     path::Path,
 };
 
@@ -46,52 +46,62 @@ fn read_jsonl_sync(
     byte_offset: u64,
     max_records: usize,
 ) -> Result<JsonlBatch, AdapterError> {
+    const MAX_RECORD_BYTES: u64 = 16 * 1024 * 1024;
+    const MAX_BATCH_BYTES: u64 = MAX_RECORD_BYTES;
     let mut file = File::open(path)?;
     file.seek(SeekFrom::Start(byte_offset))?;
-    let mut bytes = Vec::new();
-    const MAX_BATCH_BYTES: u64 = 8 * 1024 * 1024;
-    file.take(MAX_BATCH_BYTES).read_to_end(&mut bytes)?;
-    if bytes.len() as u64 == MAX_BATCH_BYTES && !bytes.contains(&b'\n') {
-        return Err(AdapterError::UnsupportedSource(
-            "JSONL record exceeds the 8 MiB limit".to_owned(),
-        ));
-    }
+    let mut reader = BufReader::new(file);
     let mut records = Vec::new();
     let mut quarantined = 0_u64;
-    let mut consumed = 0_usize;
-    for chunk in bytes.split_inclusive(|byte| *byte == b'\n') {
-        if records.len() >= max_records {
+    let mut consumed = 0_u64;
+    while records.len() < max_records && consumed < MAX_BATCH_BYTES {
+        let mut chunk = Vec::new();
+        reader
+            .by_ref()
+            .take(MAX_RECORD_BYTES + 2)
+            .read_until(b'\n', &mut chunk)?;
+        if chunk.is_empty() {
             break;
         }
         let has_newline = chunk.ends_with(b"\n");
-        if !has_newline && bytes.len() as u64 == MAX_BATCH_BYTES {
+        let line = chunk.strip_suffix(b"\n").unwrap_or(&chunk);
+        let line = line.strip_suffix(b"\r").unwrap_or(line);
+        if line.len() as u64 > MAX_RECORD_BYTES
+            || (!has_newline && chunk.len() as u64 > MAX_RECORD_BYTES)
+        {
+            consumed += chunk.len() as u64;
+            if !has_newline {
+                consumed += reader.skip_until(b'\n')? as u64;
+            }
+            quarantined += 1;
+            continue;
+        }
+        if !records.is_empty() && consumed + chunk.len() as u64 > MAX_BATCH_BYTES {
             break;
         }
-        let line = chunk.strip_suffix(b"\n").unwrap_or(chunk);
-        let line = line.strip_suffix(b"\r").unwrap_or(line);
         if line.is_empty() {
-            consumed += chunk.len();
+            consumed += chunk.len() as u64;
             continue;
         }
         match serde_json::from_slice::<Value>(line) {
             Ok(value) => {
-                consumed += chunk.len();
+                consumed += chunk.len() as u64;
                 records.push(JsonlRecord {
                     value,
                     raw: line.to_vec(),
-                    end_offset: byte_offset + consumed as u64,
+                    end_offset: byte_offset + consumed,
                 });
             }
             Err(_) if !has_newline => break,
             Err(_) => {
-                consumed += chunk.len();
+                consumed += chunk.len() as u64;
                 quarantined += 1;
             }
         }
     }
     Ok(JsonlBatch {
         records,
-        end_offset: byte_offset + consumed as u64,
+        end_offset: byte_offset + consumed,
         quarantined,
     })
 }
@@ -139,12 +149,33 @@ mod tests {
     use super::read_jsonl_sync;
 
     #[test]
-    fn oversized_jsonl_record_is_rejected_without_reading_whole_file() {
-        let file = tempfile::NamedTempFile::new().expect("file");
+    fn oversized_record_is_quarantined_and_later_records_import() {
+        use std::io::{Seek, SeekFrom, Write};
+        let mut file = tempfile::NamedTempFile::new().expect("file");
+        let oversized_bytes = 17 * 1024 * 1024;
         file.as_file()
-            .set_len(1024 * 1024 * 1024)
+            .set_len(oversized_bytes)
             .expect("sparse source");
-        assert!(read_jsonl_sync(file.path(), 0, 1000).is_err());
+        file.seek(SeekFrom::End(0)).expect("seek");
+        file.write_all(b"\n{\"valid\":true}\n")
+            .expect("later record");
+        let first = read_jsonl_sync(file.path(), 0, 1000).expect("quarantine");
+        assert_eq!(first.quarantined, 1);
+        assert_eq!(first.end_offset, oversized_bytes + 1);
+        let second = read_jsonl_sync(file.path(), first.end_offset, 1000).expect("resume");
+        assert_eq!(second.records.len(), 1);
+        assert_eq!(second.records[0].value["valid"], true);
+    }
+
+    #[test]
+    fn records_between_eight_and_sixteen_mib_remain_supported() {
+        let file = tempfile::NamedTempFile::new().expect("file");
+        let record = serde_json::json!({"text": "a".repeat(9 * 1024 * 1024)}).to_string() + "\n";
+        std::fs::write(file.path(), &record).expect("source");
+        let batch = read_jsonl_sync(file.path(), 0, 1000).expect("read");
+        assert_eq!(batch.records.len(), 1);
+        assert_eq!(batch.end_offset, record.len() as u64);
+        assert_eq!(batch.quarantined, 0);
     }
 
     #[test]

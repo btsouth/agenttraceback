@@ -44,6 +44,7 @@ jobs:
         with:
           toolchain: 1.98.0
           targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+      - uses: Swatinem/rust-cache@v2
       - uses: pnpm/action-setup@v4
         with:
           version: 10.17.1
@@ -61,6 +62,10 @@ jobs:
             cargo build --release -p agenttraceback-daemon -p agenttraceback-cli --target aarch64-apple-darwin
             cargo build --release -p agenttraceback-daemon -p agenttraceback-cli --target x86_64-apple-darwin
             for binary in agenttraceback agenttracebackd; do
+              for architecture in aarch64-apple-darwin x86_64-apple-darwin; do
+                cp "target/$architecture/release/$binary" \
+                  "apps/desktop/src-tauri/binaries/$binary-$architecture"
+              done
               lipo -create \
                 "target/aarch64-apple-darwin/release/$binary" \
                 "target/x86_64-apple-darwin/release/$binary" \
