@@ -3,6 +3,21 @@
 All notable changes are documented here. AgentTraceback follows Semantic Versioning after
 the first public release.
 
+## 0.1.0-alpha.3 — 2026-09-20
+
+### Added
+
+- Launch recorded agent runs from onboarding or the dashboard in a system terminal,
+  with a native project folder picker and a working transcript capture checkbox.
+- Import detected agent history directly from onboarding with progress and results.
+- Added visible command copying and an app-styled text menu with copy, cut, paste,
+  keyboard navigation, and native clipboard access.
+
+### Fixed
+
+- Replaced misleading onboarding switches with accurate capture descriptions.
+- Kept AppImage library overrides out of launched system terminals.
+
 ## 0.1.0-alpha.2 — 2026-09-20
 
 ### Fixed

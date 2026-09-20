@@ -16,6 +16,54 @@ use agenttraceback_config::PlatformPaths;
 use agenttraceback_types::{EventEnvelope, RuntimeMetadata};
 use serde::Serialize;
 use tauri::State;
+use tauri_plugin_clipboard_manager::ClipboardExt;
+use tauri_plugin_dialog::DialogExt;
+
+mod launch;
+
+#[tauri::command]
+async fn pick_project_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    let (send, receive) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_title("Choose a project folder")
+        .pick_folder(move |folder| {
+            let _ = send.send(folder);
+        });
+    receive
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|folder| {
+            folder
+                .into_path()
+                .map(|p| p.to_string_lossy().into_owned())
+                .map_err(|e| e.to_string())
+        })
+        .transpose()
+}
+
+#[tauri::command]
+async fn launch_recorded_session(
+    state: State<'_, DesktopState>,
+    project: String,
+    agent: String,
+    transcript: bool,
+) -> Result<launch::LaunchResult, String> {
+    ensure_daemon(&state.paths, &state.client).await?;
+    tauri::async_runtime::spawn_blocking(move || launch::launch(project, agent, transcript))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn copy_text(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    app.clipboard().write_text(text).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn paste_text(app: tauri::AppHandle) -> Result<String, String> {
+    app.clipboard().read_text().map_err(|e| e.to_string())
+}
 
 #[derive(Clone)]
 struct DesktopState {
@@ -436,8 +484,14 @@ pub fn run() {
     }
     builder
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .manage(state)
         .invoke_handler(tauri::generate_handler![
+            pick_project_folder,
+            launch_recorded_session,
+            copy_text,
+            paste_text,
             daemon_snapshot,
             dashboard,
             sessions,

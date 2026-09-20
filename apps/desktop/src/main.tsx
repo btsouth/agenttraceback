@@ -10,6 +10,7 @@ import { StrictMode, useEffect } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './App';
+import { TextContextMenu } from './TextContextMenu';
 import { useThemeStore } from './lib/theme';
 import './styles.css';
 
@@ -30,7 +31,7 @@ function Root() {
     document.documentElement.style.colorScheme = theme;
   }, [theme]);
 
-  return <App />;
+  return <><App /><TextContextMenu /></>;
 }
 
 const rootRoute = createRootRoute({ component: Root });

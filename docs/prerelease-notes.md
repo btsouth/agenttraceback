@@ -11,7 +11,7 @@ Signed automatic updates are not a supported distribution path for this alpha.
 Build-time updater hooks exist, but published update metadata and end-to-end
 signature verification remain release gates. See `docs/release.md` for details.
 
-The Windows MSI uses numeric installer version `0.0.2` for this alpha; the application reports `0.1.0-alpha.2`. This keeps the installer version below the eventual stable `0.1.0` upgrade.
+The Windows MSI uses numeric installer version `0.0.3` for this alpha; the application reports `0.1.0-alpha.3`. This keeps the installer version below the eventual stable `0.1.0` upgrade.
 
 Alpha.2 fixes the desktop startup panic when updater configuration is absent. The
 release workflow now launches the packaged Linux desktop and requires a visible
@@ -21,8 +21,13 @@ On the tested Omarchy/Arch machine with newer NVIDIA drivers, the AppImage also
 requires the system Wayland client library to avoid a bundled-library/EGL conflict:
 
 ```bash
-LD_PRELOAD=/usr/lib/libwayland-client.so.0 ~/Downloads/AgentTraceback_0.1.0-alpha.2_amd64.AppImage
+LD_PRELOAD=/usr/lib/libwayland-client.so.0 ~/Downloads/AgentTraceback_0.1.0-alpha.3_amd64.AppImage
 ```
 
 This per-launch workaround changes no system files. It was verified locally with
 the published AppImage; other Linux distributions can use different library paths.
+
+Alpha.3 adds one-click recorded runs in a system terminal, a native project folder
+picker, direct onboarding history import, and working clipboard controls. Capture
+information no longer looks like switches that cannot be changed. Choose **Record
+session** in the dashboard to launch more runs after onboarding.

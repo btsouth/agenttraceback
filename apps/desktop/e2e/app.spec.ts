@@ -8,9 +8,9 @@ const harness = JSON.parse(
   fs.readFileSync(path.join(os.tmpdir(), 'agenttraceback-playwright-harness.json'), 'utf8'),
 ) as { baseUrl: string; token: string };
 
-async function installBridge(page: Page) {
+async function installBridge(page: Page, importFixture = false) {
   await page.addInitScript(
-    ({ baseUrl, token }) => {
+    ({ baseUrl, token, importFixture }) => {
       const api = async (route: string, init?: RequestInit) => {
         const response = await fetch(`${baseUrl}${route}`, {
           ...init,
@@ -27,6 +27,17 @@ async function installBridge(page: Page) {
       const internals = {
         invoke: async (command: string, args: Record<string, unknown> = {}) => {
           switch (command) {
+            case 'pick_project_folder':
+              return '/tmp/project with spaces';
+            case 'launch_recorded_session':
+              localStorage.setItem('test.launch', JSON.stringify(args));
+              if (args.project === '/missing') throw new Error('Cannot open project folder');
+              return { terminal: 'test terminal' };
+            case 'copy_text':
+              localStorage.setItem('test.clipboard', String(args.text));
+              return;
+            case 'paste_text':
+              return localStorage.getItem('test.clipboard') ?? '';
             case 'daemon_snapshot':
               return {
                 health: await api('/api/v1/health'),
@@ -45,6 +56,7 @@ async function installBridge(page: Page) {
             case 'findings':
               return api('/api/v1/findings?limit=200');
             case 'adapters':
+              if (importFixture) return { adapters: [{ id: 'codex', displayName: 'Codex', status: 'available', capabilities: [{ name: 'historical_sessions', availability: 'available' }] }] };
               return api('/api/v1/adapters');
             case 'search_history':
               return api(
@@ -66,6 +78,7 @@ async function installBridge(page: Page) {
                 body: JSON.stringify(args.request),
               });
             case 'import_adapter':
+              if (importFixture) { localStorage.setItem('test.import', String(args.adapterId)); return { eventsImported: 7, sources: 1, quarantined: 0 }; }
               return api(`/api/v1/adapters/${args.adapterId}/import`, {
                 method: 'POST',
                 body: '{}',
@@ -87,7 +100,7 @@ async function installBridge(page: Page) {
       (window as unknown as { __TAURI_INTERNALS__: typeof internals }).__TAURI_INTERNALS__ =
         internals;
     },
-    harness,
+    { ...harness, importFixture },
   );
 }
 
@@ -107,9 +120,11 @@ test('first-run onboarding reaches the real local timeline', async ({ page }) =>
   await page.getByRole('button', { name: /Get started/ }).click();
   await expect(page.getByRole('heading', { name: 'Known agents on this machine' })).toBeVisible();
   await page.getByRole('button', { name: /Continue/ }).click();
+  await expect(page.getByRole('heading', { name: 'How capture works' })).toBeVisible();
+  await expect(page.getByText('Import existing sessions on the next page or later in Settings.')).toBeVisible();
   await page.getByRole('button', { name: /Continue/ }).click();
   await expect(page.getByRole('heading', { name: /Your local history is ready/ })).toBeVisible();
-  await page.getByRole('button', { name: /Explore imported sessions/ }).click();
+  await page.getByRole('button', { name: /Open dashboard/ }).click();
   await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
   await expect(page.getByText('Demo: verified file write and recovery')).toBeVisible();
 });
@@ -149,7 +164,7 @@ test('capture launch screenshots from persisted demo records', async ({ page }) 
   await page.getByRole('button', { name: /Get started/ }).click();
   await page.getByRole('button', { name: /Continue/ }).click();
   await page.getByRole('button', { name: /Continue/ }).click();
-  await page.getByRole('button', { name: /Explore imported sessions/ }).click();
+  await page.getByRole('button', { name: /Open dashboard/ }).click();
   await expect(page.getByText('Demo: verified file write and recovery')).toBeVisible();
   await page.screenshot({ path: path.join(output, 'live-dashboard.png'), fullPage: true });
 
@@ -174,4 +189,62 @@ test('capture launch screenshots from persisted demo records', async ({ page }) 
   await page.getByRole('button', { name: 'Findings', exact: true }).click();
   await expect(page.getByText('Demo finding: sensitive configuration change')).toBeVisible();
   await page.screenshot({ path: path.join(output, 'finding.png'), fullPage: true });
+});
+
+
+test('recording launcher chooses a folder, reports errors, and passes capture choices', async ({ page }) => {
+  await openOnboarded(page);
+  await page.getByRole('button', { name: 'Record session', exact: true }).click();
+  const launch = page.getByRole('button', { name: 'Start recording in terminal' });
+  await expect(launch).toBeDisabled();
+  await page.getByRole('button', { name: 'Browse', exact: true }).click();
+  await expect(page.getByLabel('Project folder')).toHaveValue('/tmp/project with spaces');
+  await page.getByLabel('Agent', { exact: true }).selectOption('claude-code');
+  await page.getByLabel('Save an encrypted terminal transcript').uncheck();
+  await launch.click();
+  await expect(page.getByRole('status').filter({ hasText: 'Launch sent to test terminal' })).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('test.launch') ?? '{}'))).toEqual({ project: '/tmp/project with spaces', agent: 'claude-code', transcript: false });
+  await page.getByLabel('Project folder').fill('/missing');
+  await launch.click();
+  await expect(page.getByRole('alert')).toContainText('Cannot open project folder');
+});
+
+test('text menu supports copy, paste, cut, keyboard dismissal and visible command copying', async ({ page }) => {
+  await openOnboarded(page);
+  await page.getByRole('button', { name: 'Record session', exact: true }).click();
+  const folder = page.getByLabel('Project folder');
+  await folder.fill('/tmp/example');
+  await folder.selectText();
+  await folder.click({ button: 'right' });
+  await expect(page.getByRole('menu')).toBeVisible();
+  await page.getByRole('menuitem', { name: 'Copy', exact: true }).click();
+  expect(await page.evaluate(() => localStorage.getItem('test.clipboard'))).toBe('/tmp/example');
+  await folder.fill('');
+  await folder.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Paste', exact: true }).click();
+  await expect(folder).toHaveValue('/tmp/example');
+  await folder.selectText();
+  await folder.click({ button: 'right' });
+  await page.getByRole('menuitem', { name: 'Cut', exact: true }).click();
+  await expect(folder).toHaveValue('');
+  await expect(page.getByRole('button', { name: 'Start recording in terminal' })).toBeDisabled();
+  await folder.click({ button: 'right' });
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(folder).toBeFocused();
+  await page.getByText('Already using the CLI?', { exact: true }).click();
+  await page.getByRole('button', { name: 'Copy', exact: true }).click();
+  expect(await page.evaluate(() => localStorage.getItem('test.clipboard'))).toBe('agenttraceback run --agent codex -- codex');
+  await expect(page.getByRole('status').filter({ hasText: 'Copied' })).toBeVisible();
+});
+
+
+test('onboarding offers an explicit history import without opening a terminal', async ({ page }) => {
+  await installBridge(page, true);
+  await page.addInitScript(() => localStorage.setItem('agenttraceback.onboarding.step', '3'));
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Import Codex history' }).click();
+  await expect(page.getByRole('status').filter({ hasText: 'Imported 7 events from 1 sources' })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('test.import'))).toBe('codex');
+  expect(await page.evaluate(() => localStorage.getItem('test.launch'))).toBeNull();
 });

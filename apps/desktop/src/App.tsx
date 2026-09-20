@@ -52,6 +52,7 @@ import {
   type SessionFileChange,
   type SessionView,
 } from './lib/daemon';
+import { SessionLauncher } from './SessionLauncher';
 import { useThemeStore } from './lib/theme';
 
 type Screen = 'live' | 'sessions' | 'search' | 'files' | 'usage' | 'findings' | 'settings';
@@ -75,6 +76,7 @@ export function App() {
   const [selectedSession, setSelectedSession] = useState<SessionView | null>(null);
   const [selectedEvent, setSelectedEvent] = useState<EventEnvelope | null>(null);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [launcherOpen, setLauncherOpen] = useState(false);
   const pendingG = useRef(false);
 
   const snapshot = useQuery({
@@ -196,6 +198,7 @@ export function App() {
             {dashboard.data ? `${dashboard.data.projects.length} projects` : 'All projects'}
           </div>
           <div className="topbar-actions">
+            <button className="primary-button" type="button" onClick={() => setLauncherOpen((open) => !open)}><TerminalSquare size={15} /> {launcherOpen ? 'Close recorder' : 'Record session'}</button>
             <button className="command-hint" type="button" onClick={() => setPaletteOpen(true)}>
               <Search size={15} aria-hidden="true" />
               <span>Command palette</span>
@@ -212,6 +215,8 @@ export function App() {
             </button>
           </div>
         </header>
+
+        {launcherOpen ? <SessionLauncher /> : null}
 
         {snapshot.isError || dashboard.isError ? (
           <ErrorPanel
@@ -310,7 +315,7 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
             </div>
             <div className="onboarding-actions">
               <button className="primary-button" type="button" onClick={() => go(1)}>Get started <ChevronRight size={16} /></button>
-              <span>Local-first recording settings are applied in the next step.</span>
+              <span>Next, find your agents and choose how to get started.</span>
             </div>
           </>
         ) : null}
@@ -335,17 +340,17 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
         ) : null}
         {step === 2 ? (
           <>
-            <span className="panel-kicker">CAPTURE CHOICES</span>
-            <h1>Useful by default, explicit where it matters</h1>
-            <p>These defaults match the v0.1 privacy contract. Optional hooks remain off until separately approved.</p>
-            <div className="choice-list">
-              <Choice title="Read-only historical import" detail="On" enabled />
-              <Choice title="Live tailing" detail="On" enabled />
-              <Choice title="Optional agent hooks" detail="Off until approved" />
-              <Choice title="Terminal transcripts" detail="Encrypted, 30-day retention" enabled />
-              <Choice title="Sensitive file content" detail="Off" />
-              <Choice title="Start daemon at login" detail="Configurable later" enabled />
-            </div>
+            <span className="panel-kicker">CAPTURE OVERVIEW</span>
+            <h1>How capture works</h1>
+            <p>Next, import existing history or launch a recorded run in your normal terminal.</p>
+            <dl className="capture-summary">
+              <CaptureDetail title="Historical import" detail="Import existing sessions on the next page or later in Settings." />
+              <CaptureDetail title="Live sessions" detail="Choose your agent and project, then start recording in your terminal." />
+              <CaptureDetail title="Optional agent hooks" detail="Require a separate approval step before installation." />
+              <CaptureDetail title="Terminal transcripts" detail="Choose whether to save an encrypted transcript when launching a run." />
+              <CaptureDetail title="Sensitive file content" detail="Excluded by default." />
+              <CaptureDetail title="Start daemon at login" detail="Optional. Manage with agenttraceback daemon startup in a terminal." />
+            </dl>
             <div className="onboarding-actions">
               <button className="primary-button" type="button" onClick={() => go(3)}>Continue <ChevronRight size={16} /></button>
             </div>
@@ -355,14 +360,11 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
           <>
             <span className="panel-kicker">READY</span>
             <h1>Your local history is ready to grow</h1>
-            <p>Imports continue in the background. Partial results remain usable while cursors advance.</p>
-            <div className="command-card onboarding-command">
-              <div className="command-card-label"><TerminalSquare size={15} /> Record a new session</div>
-              <code>agenttraceback run --agent codex -- codex</code>
-              <span className="command-caption">The wrapped process keeps its terminal, stdin, resize behavior, and exit code.</span>
-            </div>
+            <p>Import past sessions here, or start a new recorded run. Neither is required to explore the dashboard.</p>
+            <HistoryImport />
+            <SessionLauncher />
             <div className="onboarding-actions">
-              <button className="primary-button" type="button" onClick={finish}>Explore imported sessions <ChevronRight size={16} /></button>
+              <button className="primary-button" type="button" onClick={finish}>Open dashboard <ChevronRight size={16} /></button>
             </div>
           </>
         ) : null}
@@ -781,6 +783,25 @@ function FindingsScreen({ findings, sessions, onOpenSession }: { findings: Findi
   );
 }
 
+function HistoryImport() {
+  const client = useQueryClient();
+  const adapters = useQuery({ queryKey: ['adapters'], queryFn: loadAdapters });
+  const mutation = useMutation({ mutationFn: importAdapter, onSuccess: () => {
+    void client.invalidateQueries({ queryKey: ['dashboard'] });
+    void client.invalidateQueries({ queryKey: ['adapters'] });
+  } });
+  const available = (adapters.data?.adapters ?? []).filter((adapter) => adapter.capabilities.some((capability) => capability.name === 'historical_sessions' && capability.availability === 'available'));
+  return <section className="history-import" aria-label="Import existing history">
+    <h2>Import existing history</h2><p>Read past sessions from detected agents. No terminal command needed.</p>
+    {adapters.isPending ? <LoadingPanel label="Looking for history" /> : null}
+    {adapters.isError ? <ErrorPanel title="Could not find agent history" detail={errorText(adapters.error)} retry={() => void adapters.refetch()} compact /> : null}
+    {adapters.isSuccess && !available.length ? <p>No importable history found. You can rescan in Settings after using an agent.</p> : null}
+    <div className="onboarding-actions">{available.map((adapter) => <button className="ghost-button" type="button" key={adapter.id} disabled={mutation.isPending} onClick={() => mutation.mutate(adapter.id)}>{mutation.isPending && mutation.variables === adapter.id ? 'Importing…' : `Import ${adapter.displayName} history`}</button>)}</div>
+    {mutation.data ? <p role="status" className="success-copy">Imported {mutation.data.eventsImported} events from {mutation.data.sources} sources; {mutation.data.quarantined} quarantined.</p> : null}
+    {mutation.isError ? <p role="alert" className="launch-error">Import failed: {errorText(mutation.error)}</p> : null}
+  </section>;
+}
+
 function SettingsScreen() {
   const queryClient = useQueryClient();
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
@@ -1002,8 +1023,8 @@ function Fact({ icon, title, copy }: { icon: ReactNode; title: string; copy: str
   return <div className="fact"><span>{icon}</span><strong>{title}</strong><p>{copy}</p></div>;
 }
 
-function Choice({ title, detail, enabled = false }: { title: string; detail: string; enabled?: boolean }) {
-  return <div className="choice"><span className={enabled ? 'choice-toggle choice-toggle-on' : 'choice-toggle'}><i /></span><div><strong>{title}</strong><small>{detail}</small></div></div>;
+function CaptureDetail({ title, detail }: { title: string; detail: string }) {
+  return <div className="capture-detail"><dt>{title}</dt><dd>{detail}</dd></div>;
 }
 
 function SettingRow({ title, value }: { title: string; value: string }) {
