@@ -1,0 +1,4 @@
+{"timestamp":"2026-09-20T10:00:00Z","type":"session_meta","payload":{"id":"fixture-codex-1","cwd":"/tmp/project","model":"gpt-5","model_provider":"openai"}}
+{"timestamp":"2026-09-20T10:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"fix the bug"}]}}
+{"timestamp":"2026-09-20T10:00:02Z","type":"response_item","payload":{"type":"function_call","name":"shell","arguments":"{\"command\":\"cargo test\"}"}}
+{"timestamp":"2026-09-20T10:00:03Z","type":"response_item","payload":{"type":"function_call_output","output":"tests passed"}}

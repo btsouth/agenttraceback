@@ -1,0 +1,14 @@
+[package]
+name = "agenttraceback-search"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Structured and full-text search for AgentTraceback"
+
+[lints]
+workspace = true
+
+[dependencies]
+chrono.workspace = true
+thiserror.workspace = true

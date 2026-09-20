@@ -1,0 +1,29 @@
+[package]
+name = "agenttraceback-crypto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Key management, encryption, and integrity primitives for AgentTraceback"
+
+[lints]
+workspace = true
+
+[dependencies]
+base64.workspace = true
+blake3.workspace = true
+chacha20poly1305.workspace = true
+ed25519-dalek.workspace = true
+hex.workspace = true
+hkdf.workspace = true
+keyring.workspace = true
+rand.workspace = true
+serde.workspace = true
+serde_jcs.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+zeroize.workspace = true
+zstd.workspace = true

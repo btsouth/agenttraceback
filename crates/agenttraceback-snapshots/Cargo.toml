@@ -1,0 +1,26 @@
+[package]
+name = "agenttraceback-snapshots"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Project baselines and file-version manifests for AgentTraceback"
+
+[lints]
+workspace = true
+
+[dependencies]
+agenttraceback-crypto.workspace = true
+agenttraceback-projects.workspace = true
+agenttraceback-risk.workspace = true
+agenttraceback-types.workspace = true
+blake3.workspace = true
+hex.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+similar.workspace = true
+thiserror.workspace = true
+walkdir.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

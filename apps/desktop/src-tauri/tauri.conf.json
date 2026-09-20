@@ -1,0 +1,51 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "AgentTraceback",
+  "version": "0.1.0-dev",
+  "identifier": "com.agenttraceback.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "AgentTraceback",
+        "width": 1440,
+        "height": 940,
+        "minWidth": 920,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost data:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; script-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/agenttracebackd",
+      "binaries/agenttraceback"
+    ],
+    "category": "DeveloperTool",
+    "shortDescription": "Verified record and recovery for AI coding-agent runs",
+    "longDescription": "Every agent. Every action. One timeline. AgentTraceback is a local-first verified record and recovery tool for AI coding-agent runs.",
+    "copyright": "Copyright AgentTraceback Contributors",
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

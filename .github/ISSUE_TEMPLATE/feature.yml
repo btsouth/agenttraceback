@@ -1,0 +1,36 @@
+name: Feature proposal
+description: Propose a scoped change against the implementation contract
+title: '[Feature]: '
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: User problem
+      description: What local-first outcome is missing?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain how evidence provenance, safety, and recovery are preserved.
+    validations:
+      required: true
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Relevant milestone
+      options:
+        - Milestone 0 foundation
+        - Milestone 1 storage/evidence
+        - Milestone 2 capture
+        - Milestone 3 recovery/risk
+        - Milestone 4 first adapters
+        - Milestone 5 remaining adapters
+        - Milestone 6 product UI
+        - Milestone 7 hardening/packaging
+        - Milestone 8 launch readiness
+        - Post-v0.1
+    validations:
+      required: true

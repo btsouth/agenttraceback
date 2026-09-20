@@ -1,0 +1,19 @@
+[package]
+name = "agenttraceback-risk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Explainable sensitive-path and command risk rules for AgentTraceback"
+
+[lints]
+workspace = true
+
+[dependencies]
+agenttraceback-types.workspace = true
+regex.workspace = true
+serde.workspace = true
+shell-words.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

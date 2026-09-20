@@ -1,0 +1,3 @@
+{"type":"user","sessionId":"fixture-claude-1","cwd":"/tmp/project","timestamp":"2026-09-20T10:00:00Z","uuid":"u1","message":{"role":"user","content":"fix the failing test"}}
+{"type":"assistant","sessionId":"fixture-claude-1","timestamp":"2026-09-20T10:00:01Z","uuid":"a1","message":{"role":"assistant","model":"claude-sonnet","content":[{"type":"tool_use","id":"tool-1","name":"Bash","input":{"command":"cargo test"}}]}}
+{"type":"user","sessionId":"fixture-claude-1","timestamp":"2026-09-20T10:00:02Z","uuid":"r1","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-1","content":"tests passed"}]}}

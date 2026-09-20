@@ -1,0 +1,29 @@
+[package]
+name = "agenttraceback-events"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Event validation, normalization, and canonicalization for AgentTraceback"
+
+[lints]
+workspace = true
+
+[dependencies]
+agenttraceback-blobs.workspace = true
+agenttraceback-correlation.workspace = true
+agenttraceback-crypto.workspace = true
+agenttraceback-risk.workspace = true
+agenttraceback-store.workspace = true
+agenttraceback-types.workspace = true
+regex.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+agenttraceback-search.workspace = true
+hex.workspace = true
+rusqlite.workspace = true
+tempfile.workspace = true

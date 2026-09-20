@@ -1,0 +1,417 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AgentTraceback local API",
+    "version": "1.0.0",
+    "description": "Authenticated loopback API for the AgentTraceback daemon. Responses use camelCase JSON."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:{port}",
+      "variables": {
+        "port": {
+          "default": "0"
+        }
+      }
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/v1/health": {
+      "get": {
+        "summary": "Daemon, database, key, and capture health",
+        "responses": {
+          "200": {
+            "description": "Health response"
+          }
+        }
+      }
+    },
+    "/api/v1/capabilities": {
+      "get": {
+        "summary": "Truthful platform and capture capabilities",
+        "responses": {
+          "200": {
+            "description": "Capability matrix"
+          }
+        }
+      }
+    },
+    "/api/v1/storage": {
+      "get": {
+        "summary": "Local storage usage and budget state",
+        "responses": {
+          "200": {
+            "description": "Storage response"
+          }
+        }
+      }
+    },
+    "/api/v1/dashboard": {
+      "get": {
+        "summary": "Dashboard aggregate from persisted records",
+        "responses": {
+          "200": {
+            "description": "Dashboard response"
+          }
+        }
+      }
+    },
+    "/api/v1/projects": {
+      "get": {
+        "summary": "List projects",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project list"
+          }
+        }
+      }
+    },
+    "/api/v1/sessions": {
+      "get": {
+        "summary": "List sessions",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session list"
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{id}": {
+      "get": {
+        "summary": "Session summary",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session summary"
+          },
+          "404": {
+            "description": "Session not found"
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{id}/events": {
+      "get": {
+        "summary": "Chronological session timeline",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Normalized event timeline"
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{id}/findings": {
+      "get": {
+        "summary": "Findings attached to one session",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session findings"
+          }
+        }
+      }
+    },
+    "/api/v1/sessions/{id}/files": {
+      "get": {
+        "summary": "Before and after file versions for one session",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Session file changes"
+          }
+        }
+      }
+    },
+    "/api/v1/files": {
+      "get": {
+        "summary": "Cross-session file history",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File summaries"
+          }
+        }
+      }
+    },
+    "/api/v1/findings": {
+      "get": {
+        "summary": "Cross-session findings",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Finding summaries"
+          }
+        }
+      }
+    },
+    "/api/v1/search": {
+      "get": {
+        "summary": "Structured and full-text redacted search",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "$ref": "#/components/parameters/Limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Search results"
+          },
+          "422": {
+            "description": "Invalid query"
+          }
+        }
+      }
+    },
+    "/api/v1/adapters": {
+      "get": {
+        "summary": "Detected adapter installations and capabilities",
+        "responses": {
+          "200": {
+            "description": "Adapter scan"
+          }
+        }
+      }
+    },
+    "/api/v1/adapters/scan": {
+      "post": {
+        "summary": "Rescan known adapter locations",
+        "responses": {
+          "200": {
+            "description": "Adapter scan"
+          }
+        }
+      }
+    },
+    "/api/v1/adapters/{id}/import": {
+      "post": {
+        "summary": "Import or resume historical records",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Import outcome"
+          }
+        }
+      }
+    },
+    "/api/v1/adapters/{id}/hooks/plan": {
+      "post": {
+        "summary": "Build an exact reversible hook plan",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Hook plan or null"
+          }
+        }
+      }
+    },
+    "/api/v1/adapters/{id}/hooks/install": {
+      "post": {
+        "summary": "Install an approved hook plan",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Hook receipt"
+          }
+        }
+      }
+    },
+    "/api/v1/adapters/{id}/hooks/uninstall": {
+      "post": {
+        "summary": "Remove only AgentTraceback-owned hook entries",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Hook removed"
+          }
+        }
+      }
+    },
+    "/api/v1/recovery/plans": {
+      "post": {
+        "summary": "Build an immutable recovery plan",
+        "responses": {
+          "200": {
+            "description": "Recovery plan"
+          }
+        }
+      }
+    },
+    "/api/v1/recovery/plans/{id}": {
+      "get": {
+        "summary": "Load an immutable recovery plan",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recovery plan"
+          }
+        }
+      }
+    },
+    "/api/v1/recovery/plans/{id}/execute": {
+      "post": {
+        "summary": "Execute a digest-bound recovery plan",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/Id"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Recovery run"
+          }
+        }
+      }
+    },
+    "/api/v1/exports": {
+      "post": {
+        "summary": "Create a redacted JSON or Markdown export",
+        "responses": {
+          "202": {
+            "description": "Completed local export"
+          }
+        }
+      }
+    },
+    "/api/v1/verify": {
+      "get": {
+        "summary": "Verify a session or global integrity chain",
+        "responses": {
+          "200": {
+            "description": "Verification report"
+          }
+        }
+      }
+    },
+    "/api/v1/demo/install": {
+      "post": {
+        "summary": "Install clearly labeled demo data",
+        "responses": {
+          "200": {
+            "description": "Demo result"
+          }
+        }
+      }
+    },
+    "/api/v1/demo/remove": {
+      "post": {
+        "summary": "Remove all demo project history through audited deletion",
+        "responses": {
+          "200": {
+            "description": "Demo removal result"
+          }
+        }
+      }
+    },
+    "/api/v1/live": {
+      "get": {
+        "summary": "Authenticated WebSocket live stream",
+        "responses": {
+          "101": {
+            "description": "WebSocket upgrade"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    },
+    "parameters": {
+      "Id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      },
+      "Limit": {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 500,
+          "default": 50
+        }
+      }
+    }
+  }
+}

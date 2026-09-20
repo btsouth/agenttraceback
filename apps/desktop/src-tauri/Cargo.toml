@@ -1,0 +1,29 @@
+[package]
+name = "agenttraceback-desktop"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "AgentTraceback desktop application"
+
+[lib]
+name = "agenttraceback_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+agenttraceback-api.workspace = true
+agenttraceback-config.workspace = true
+agenttraceback-types.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tauri.workspace = true
+tauri-plugin-process = "2.0"
+tauri-plugin-updater = "2.0"
+tokio.workspace = true

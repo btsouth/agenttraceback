@@ -1,0 +1,148 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            bundles: deb,appimage
+            target: x86_64-unknown-linux-gnu
+          - name: macos-universal
+            os: macos-15
+            bundles: app,dmg
+            target: universal-apple-darwin
+          - name: windows-x86_64
+            os: windows-2025
+            bundles: nsis,msi
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.0
+          targets: ${{ matrix.target == 'universal-apple-darwin' && 'aarch64-apple-darwin,x86_64-apple-darwin' || matrix.target }}
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.17.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build CLI and daemon sidecars
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p apps/desktop/src-tauri/binaries
+          if [ "${{ matrix.target }}" = "universal-apple-darwin" ]; then
+            cargo build --release -p agenttraceback-daemon -p agenttraceback-cli --target aarch64-apple-darwin
+            cargo build --release -p agenttraceback-daemon -p agenttraceback-cli --target x86_64-apple-darwin
+            for binary in agenttraceback agenttracebackd; do
+              lipo -create \
+                "target/aarch64-apple-darwin/release/$binary" \
+                "target/x86_64-apple-darwin/release/$binary" \
+                -output "apps/desktop/src-tauri/binaries/$binary-universal-apple-darwin"
+            done
+          else
+            cargo build --release -p agenttraceback-daemon -p agenttraceback-cli --target "${{ matrix.target }}"
+            if [ "${{ runner.os }}" = "Windows" ]; then
+              extension=".exe"
+            else
+              extension=""
+            fi
+            for binary in agenttraceback agenttracebackd; do
+              cp "target/${{ matrix.target }}/release/$binary$extension" \
+                "apps/desktop/src-tauri/binaries/$binary-${{ matrix.target }}$extension"
+            done
+          fi
+      - name: Build installer and signed updater artifacts when keys are available
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ -n "$TAURI_UPDATER_PUBLIC_KEY" ]; then
+            pnpm --filter @agenttraceback/desktop tauri build \
+              --target "${{ matrix.target }}" \
+              --bundles "${{ matrix.bundles }}" \
+              --config "{\"bundle\":{\"createUpdaterArtifacts\":true},\"plugins\":{\"updater\":{\"pubkey\":\"$TAURI_UPDATER_PUBLIC_KEY\",\"endpoints\":[\"https://github.com/agenttraceback-tools/agenttraceback/releases/latest/download/latest.json\"]}}}"
+          else
+            pnpm --filter @agenttraceback/desktop tauri build \
+              --target "${{ matrix.target }}" \
+              --bundles "${{ matrix.bundles }}"
+          fi
+      - name: Generate checksums
+        shell: bash
+        run: |
+          find target -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' -o -name '*.msi' -o -name '*.exe' -o -name '*.tar.gz' -o -name '*.zip' -o -name '*.sig' \) -print0 \
+            | sort -z \
+            | xargs -0 sha256sum > "${{ matrix.name }}-SHA256SUMS"
+      - name: Generate shell completions
+        shell: bash
+        run: |
+          mkdir -p "release-completions"
+          for shell in bash zsh fish powershell; do
+            cargo run --release -p agenttraceback-cli -- completions "$shell" > "release-completions/agenttraceback.$shell"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: |
+            target/**/bundle/**
+            target/release/agenttraceback
+            target/release/agenttracebackd
+            target/release/agenttraceback-desktop
+            target/release/agenttraceback.exe
+            target/release/agenttracebackd.exe
+            target/release/agenttraceback-desktop.exe
+            ${{ matrix.name }}-SHA256SUMS
+            release-completions/**
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+      - name: Publish release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1 || \
+            gh release create "${GITHUB_REF_NAME}" --generate-notes --title "AgentTraceback ${GITHUB_REF_NAME}"
+          find release-artifacts -type f -maxdepth 8 -print0 | xargs -0 gh release upload "${GITHUB_REF_NAME}" --clobber

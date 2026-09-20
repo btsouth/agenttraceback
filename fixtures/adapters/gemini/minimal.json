@@ -1,0 +1,25 @@
+{
+  "sessionId": "fixture-gemini-1",
+  "cwd": "/tmp/project",
+  "title": "Fix the failing test",
+  "model": "gemini-2.5-pro",
+  "messages": [
+    {
+      "role": "user",
+      "timestamp": "2026-09-20T10:00:00Z",
+      "content": "fix the failing test"
+    },
+    {
+      "role": "assistant",
+      "timestamp": "2026-09-20T10:00:01Z",
+      "content": "running the test",
+      "functionCalls": [
+        {
+          "name": "run_shell_command",
+          "args": {"command": "cargo test"}
+        }
+      ]
+    }
+  ],
+  "unknownFutureField": true
+}

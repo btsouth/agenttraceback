@@ -1,0 +1,16 @@
+[package]
+name = "agenttraceback-types"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Stable IDs, DTOs, and serialized core types for AgentTraceback"
+
+[lints]
+workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+uuid.workspace = true

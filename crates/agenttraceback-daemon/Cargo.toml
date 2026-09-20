@@ -1,0 +1,44 @@
+[package]
+name = "agenttraceback-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Per-user AgentTraceback recorder daemon"
+
+[[bin]]
+name = "agenttracebackd"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+agenttraceback-api.workspace = true
+agenttraceback-adapter-sdk.workspace = true
+agenttraceback-adapters.workspace = true
+agenttraceback-blobs.workspace = true
+agenttraceback-config.workspace = true
+agenttraceback-crypto.workspace = true
+agenttraceback-events.workspace = true
+agenttraceback-platform.workspace = true
+agenttraceback-projects.workspace = true
+agenttraceback-recovery.workspace = true
+agenttraceback-snapshots.workspace = true
+agenttraceback-store.workspace = true
+agenttraceback-types.workspace = true
+fs2.workspace = true
+thiserror.workspace = true
+hex.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+
+[dev-dependencies]
+agenttraceback-search.workspace = true
+tempfile.workspace = true

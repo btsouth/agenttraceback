@@ -1,0 +1,39 @@
+# Rust
+/target/
+**/*.rs.bk
+
+# JavaScript
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vite/
+coverage/
+playwright-report/
+test-results/
+
+# Tauri
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/schemas/
+apps/desktop/src-tauri/binaries/
+
+# Local AgentTraceback data and generated artifacts
+.agenttraceback/
+agenttraceback-data/
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+
+# Editors and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local environment
+.env
+.env.*
+!.env.example

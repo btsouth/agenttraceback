@@ -1,0 +1,49 @@
+name: Bug report
+description: Report a reproducible defect without sensitive data
+title: '[Bug]: '
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not include prompts, source code, tokens, terminal output, or real agent history. Sanitize all logs and fixtures.
+  - type: input
+    id: version
+    attributes:
+      label: Version or revision
+      placeholder: Commit SHA or release version
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: Windows 11, macOS 15 arm64, Ubuntu 24.04, etc.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction steps
+      description: Provide the smallest synthetic reproduction available.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Redacted diagnostics
+      description: Include only reviewed, redacted output.
+    validations:
+      required: false

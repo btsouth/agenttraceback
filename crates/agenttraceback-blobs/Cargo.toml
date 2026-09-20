@@ -1,0 +1,17 @@
+[package]
+name = "agenttraceback-blobs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Encrypted content-addressed blob storage for AgentTraceback"
+
+[lints]
+workspace = true
+
+[dependencies]
+agenttraceback-crypto.workspace = true
+blake3.workspace = true
+hex.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true

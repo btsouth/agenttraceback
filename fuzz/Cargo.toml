@@ -1,0 +1,21 @@
+[package]
+name = "agenttraceback-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+agenttraceback-search = { path = "../crates/agenttraceback-search" }
+
+[[bin]]
+name = "query_parser"
+path = "fuzz_targets/query_parser.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

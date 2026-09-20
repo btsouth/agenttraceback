@@ -1,0 +1,19 @@
+[package]
+name = "agenttraceback-projects"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Project discovery and path normalization for AgentTraceback"
+
+[lints]
+workspace = true
+
+[dependencies]
+agenttraceback-types.workspace = true
+globset.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
