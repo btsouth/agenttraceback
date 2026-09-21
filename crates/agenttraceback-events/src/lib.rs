@@ -10,7 +10,7 @@ use agenttraceback_crypto::{KeyError, MasterKey};
 use agenttraceback_risk::{RiskEngine, RiskFindingDraft};
 use agenttraceback_store::{BlobMetadata, Store, StoreError};
 use agenttraceback_store::{CorrelationConflictInsert, CorrelationInsert, RiskFindingRecord};
-use agenttraceback_types::EventEnvelope;
+use agenttraceback_types::{EventEnvelope, MAX_PREVIEW_BYTES};
 use thiserror::Error;
 use tokio::sync::{mpsc, oneshot};
 
@@ -241,11 +241,32 @@ async fn process_event(
             .map(|finding| finding.id.to_string())
             .collect();
     }
+    // Analyze/redact the full message first; only the indexed display preview
+    // is bounded. The original payload remains in the encrypted blob store.
+    if let Some(preview) = &mut event.content.redacted_preview {
+        const SUFFIX: &str = "\n[Preview truncated]";
+        if preview.len() > MAX_PREVIEW_BYTES {
+            let mut boundary = MAX_PREVIEW_BYTES - SUFFIX.len();
+            while !preview.is_char_boundary(boundary) {
+                boundary -= 1;
+            }
+            preview.truncate(boundary);
+            preview.push_str(SUFFIX);
+        }
+    }
+    let incoming_id = event.id;
+    let finding_ids = event.risk.finding_ids.clone();
     let persisted = store.append_events(vec![event]).await?;
     let persisted = persisted
         .into_iter()
         .next()
         .ok_or(IngestionError::WorkerStopped)?;
+    if persisted.id != incoming_id || persisted.risk.finding_ids != finding_ids {
+        // Replaying a checkpointed source returns its existing event/findings.
+        // Fresh finding IDs refer to the unpersisted incoming event and must
+        // not be inserted as additional findings on a retry.
+        return Ok(persisted);
+    }
     if !findings.is_empty() {
         store
             .save_risk_findings(
@@ -361,7 +382,7 @@ mod tests {
     use agenttraceback_store::Store;
     use agenttraceback_types::{EventAction, EventEnvelope, EventSource, SourceKind};
 
-    use super::{IngestionConfig, IngestionError, IngestionPipeline};
+    use super::{IngestionConfig, IngestionError, IngestionPipeline, MAX_PREVIEW_BYTES};
 
     fn event(preview: &str) -> EventEnvelope {
         let source = EventSource {
@@ -424,6 +445,49 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn long_unicode_previews_are_bounded_without_losing_the_encrypted_payload() {
+        let directory = tempfile::tempdir().unwrap();
+        let key = MasterKey::generate();
+        let store = Store::open(
+            directory.path().join("db"),
+            directory.path().join("backups"),
+        )
+        .await
+        .unwrap();
+        let blobs = BlobStore::open(
+            directory.path().join("blobs"),
+            BlobCipher::from_master_key(&key).unwrap(),
+        )
+        .unwrap();
+        let pipeline = IngestionPipeline::start(
+            store.clone(),
+            blobs.clone(),
+            key,
+            IngestionConfig::default(),
+        );
+        let text = format!(
+            "sk-abcdefghijklmnopqrstuvwxyz0123456789 {}",
+            "🙂".repeat(30_000)
+        );
+        let persisted = pipeline
+            .ingest(event(&text), Some(text.as_bytes().to_vec()))
+            .await
+            .unwrap();
+        let preview = persisted.content.redacted_preview.as_ref().unwrap();
+        assert!(preview.len() <= MAX_PREVIEW_BYTES);
+        assert!(preview.ends_with("[Preview truncated]"));
+        assert!(!preview.contains("sk-abcdefghijklmnopqrstuvwxyz"));
+        let digest: [u8; 32] = hex::decode(persisted.source.raw_blob_id.unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap();
+        assert_eq!(blobs.get(&digest).unwrap(), text.as_bytes());
+        assert_eq!(store.event_count().await.unwrap(), 1);
+        pipeline.close().await.unwrap();
+        store.close().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn oversized_raw_payload_is_rejected_before_queueing() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let master_key = MasterKey::generate();
@@ -466,6 +530,8 @@ mod tests {
             IngestionPipeline::start(store.clone(), blobs, master_key, IngestionConfig::default());
         let mut event = event("git reset --hard HEAD~1");
         event.action = EventAction::CommandExecute;
+        let mut replay = event.clone();
+        replay.id = agenttraceback_types::EntityId::new();
         let persisted = pipeline.ingest(event, None).await.expect("ingest");
         assert!(!persisted.risk.finding_ids.is_empty());
         assert_eq!(
@@ -479,6 +545,16 @@ mod tests {
             })
             .expect("risk count");
         assert!(count >= 1);
+        let repeated = pipeline
+            .ingest(replay, None)
+            .await
+            .expect("replay with fresh finding IDs");
+        assert_eq!(persisted.id, repeated.id);
+        assert_eq!(store.event_count().await.unwrap(), 1);
+        let after: i64 = connection
+            .query_row("SELECT COUNT(*) FROM risk_findings", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(after, count);
         pipeline.close().await.expect("close pipeline");
         store.close().await.expect("close store");
     }

@@ -31,7 +31,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-adapter-sdk"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-types",
  "async-trait",
@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-adapters"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-adapter-sdk",
  "agenttraceback-types",
@@ -61,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-api"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-adapter-sdk",
  "agenttraceback-blobs",
@@ -88,7 +88,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-blobs"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-crypto",
  "blake3",
@@ -99,7 +99,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-cli"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-adapter-sdk",
  "agenttraceback-api",
@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-config"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-types",
  "hex",
@@ -133,7 +133,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-correlation"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-types",
  "serde",
@@ -143,7 +143,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-crypto"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -166,7 +166,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-daemon"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-adapter-sdk",
  "agenttraceback-adapters",
@@ -186,6 +186,7 @@ dependencies = [
  "async-trait",
  "fs2",
  "hex",
+ "rusqlite",
  "serde_json",
  "tempfile",
  "thiserror 2.0.20",
@@ -198,12 +199,13 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-desktop"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-api",
  "agenttraceback-config",
  "agenttraceback-types",
  "reqwest 0.12.28",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",
@@ -218,7 +220,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-events"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-blobs",
  "agenttraceback-correlation",
@@ -239,7 +241,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-export"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-types",
  "base64 0.22.1",
@@ -251,7 +253,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-platform"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-types",
  "crossterm",
@@ -267,7 +269,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-projects"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-types",
  "globset",
@@ -278,7 +280,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-recovery"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-blobs",
  "agenttraceback-crypto",
@@ -294,7 +296,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-risk"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-types",
  "regex",
@@ -305,7 +307,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-search"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "chrono",
  "thiserror 2.0.20",
@@ -313,7 +315,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-snapshots"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-crypto",
  "agenttraceback-projects",
@@ -331,7 +333,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-store"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "agenttraceback-crypto",
  "agenttraceback-search",
@@ -349,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "agenttraceback-types"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -1951,7 +1953,7 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 
 [[package]]
 name = "fixture-agent"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "anyhow",
  "chrono",
@@ -7531,7 +7533,7 @@ dependencies = [
 
 [[package]]
 name = "xtask"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 dependencies = [
  "anyhow",
  "clap",

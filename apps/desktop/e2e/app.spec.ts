@@ -8,9 +8,9 @@ const harness = JSON.parse(
   fs.readFileSync(path.join(os.tmpdir(), 'agenttraceback-playwright-harness.json'), 'utf8'),
 ) as { baseUrl: string; token: string };
 
-async function installBridge(page: Page, importFixture = false) {
+async function installBridge(page: Page) {
   await page.addInitScript(
-    ({ baseUrl, token, importFixture }) => {
+    ({ baseUrl, token }) => {
       const api = async (route: string, init?: RequestInit) => {
         const response = await fetch(`${baseUrl}${route}`, {
           ...init,
@@ -56,7 +56,6 @@ async function installBridge(page: Page, importFixture = false) {
             case 'findings':
               return api('/api/v1/findings?limit=200');
             case 'adapters':
-              if (importFixture) return { adapters: [{ id: 'codex', displayName: 'Codex', status: 'available', capabilities: [{ name: 'historical_sessions', availability: 'available' }] }] };
               return api('/api/v1/adapters');
             case 'search_history':
               return api(
@@ -77,8 +76,12 @@ async function installBridge(page: Page, importFixture = false) {
                 method: 'POST',
                 body: JSON.stringify(args.request),
               });
+            case 'start_history_import':
+              localStorage.setItem('test.import-all', 'started');
+              return api('/api/v1/history/import', { method: 'POST', body: '{}' });
+            case 'history_import_status':
+              return api('/api/v1/history/import');
             case 'import_adapter':
-              if (importFixture) { localStorage.setItem('test.import', String(args.adapterId)); return { eventsImported: 7, sources: 1, quarantined: 0 }; }
               return api(`/api/v1/adapters/${args.adapterId}/import`, {
                 method: 'POST',
                 body: '{}',
@@ -100,7 +103,7 @@ async function installBridge(page: Page, importFixture = false) {
       (window as unknown as { __TAURI_INTERNALS__: typeof internals }).__TAURI_INTERNALS__ =
         internals;
     },
-    { ...harness, importFixture },
+    harness,
   );
 }
 
@@ -121,10 +124,10 @@ test('first-run onboarding reaches the real local timeline', async ({ page }) =>
   await expect(page.getByRole('heading', { name: 'Known agents on this machine' })).toBeVisible();
   await page.getByRole('button', { name: /Continue/ }).click();
   await expect(page.getByRole('heading', { name: 'How capture works' })).toBeVisible();
-  await expect(page.getByText('Import existing sessions on the next page or later in Settings.')).toBeVisible();
+  await expect(page.getByText('All detected agents import together in the background.')).toBeVisible();
   await page.getByRole('button', { name: /Continue/ }).click();
   await expect(page.getByRole('heading', { name: /Your local history is ready/ })).toBeVisible();
-  await page.getByRole('button', { name: /Open dashboard/ }).click();
+  await page.getByRole('button', { name: /Import history and open dashboard/ }).click();
   await expect(page.getByRole('heading', { name: 'Live' })).toBeVisible();
   await expect(page.getByText('Demo: verified file write and recovery')).toBeVisible();
 });
@@ -164,7 +167,7 @@ test('capture launch screenshots from persisted demo records', async ({ page }) 
   await page.getByRole('button', { name: /Get started/ }).click();
   await page.getByRole('button', { name: /Continue/ }).click();
   await page.getByRole('button', { name: /Continue/ }).click();
-  await page.getByRole('button', { name: /Open dashboard/ }).click();
+  await page.getByRole('button', { name: /Import history and open dashboard/ }).click();
   await expect(page.getByText('Demo: verified file write and recovery')).toBeVisible();
   await page.screenshot({ path: path.join(output, 'live-dashboard.png'), fullPage: true });
 
@@ -239,12 +242,20 @@ test('text menu supports copy, paste, cut, keyboard dismissal and visible comman
 });
 
 
-test('onboarding offers an explicit history import without opening a terminal', async ({ page }) => {
-  await installBridge(page, true);
+test('one action imports complete history in the daemon and progress survives reload', async ({ page }) => {
+  await installBridge(page);
   await page.addInitScript(() => localStorage.setItem('agenttraceback.onboarding.step', '3'));
   await page.goto('/');
-  await page.getByRole('button', { name: 'Import Codex history' }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Imported 7 events from 1 sources' })).toBeVisible();
-  expect(await page.evaluate(() => localStorage.getItem('test.import'))).toBe('codex');
+  await expect(page.getByRole('button', { name: 'Import Claude Code history', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Import history and open dashboard' }).click();
+  await expect(page.getByRole('heading', { name: 'Live', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem('test.import-all'))).toBe('started');
+  await page.reload();
+  await expect(page.getByRole('heading', { name: 'Last history import complete' })).toBeVisible({ timeout: 60_000 });
+  // Verify the persisted records beyond the old 1,000-record batch limit.
+  const response = await page.request.get(`${harness.baseUrl}/api/v1/sessions?limit=500`, { headers: { authorization: `Bearer ${harness.token}` } });
+  const sessions = await response.json() as Array<{ id: string; agentName: string; eventCount: number; startedAtUs: number }>;
+  expect(sessions.find((session) => session.agentName === 'claude-code')?.eventCount).toBe(1501);
+  expect(sessions.find((session) => session.agentName === 'claude-code')?.startedAtUs).toBe(Date.parse('2026-09-20T10:00:00Z') * 1000);
   expect(await page.evaluate(() => localStorage.getItem('test.launch'))).toBeNull();
 });

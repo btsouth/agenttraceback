@@ -8,7 +8,7 @@ export const HARNESS_PATH = path.join(os.tmpdir(), 'agenttraceback-playwright-ha
 export default async function globalSetup() {
   const root = path.resolve(process.cwd(), '../..');
   const daemon = path.join(root, 'target/debug/agenttracebackd');
-  if (!fs.existsSync(daemon)) {
+  { // Build even when an older daemon binary exists; the bridge must test current code.
     const build = spawnSync('cargo', ['build', '-p', 'agenttraceback-daemon'], {
       cwd: root,
       stdio: 'inherit',
@@ -18,6 +18,10 @@ export default async function globalSetup() {
     }
   }
   const temporary = fs.mkdtempSync(path.join(os.tmpdir(), 'agenttraceback-e2e.'));
+  const home = path.join(temporary, 'home');
+  fs.mkdirSync(path.join(home, '.claude/projects'), { recursive: true });
+  const history = Array.from({ length: 1501 }, (_, index) => JSON.stringify({ type: 'user', sessionId: 'onboarding-history', uuid: `fixture-${index}`, timestamp: '2026-09-20T10:00:00Z', message: { role: 'user', content: `History fixture ${index}` } })).join('\n') + '\n';
+  fs.writeFileSync(path.join(home, '.claude/projects/history.jsonl'), history);
   const data = path.join(temporary, 'data');
   const config = path.join(temporary, 'config');
   const runtime = path.join(temporary, 'runtime');
@@ -28,6 +32,9 @@ export default async function globalSetup() {
     stdio: 'ignore',
     env: {
       ...process.env,
+      HOME: home,
+      USERPROFILE: home,
+      PATH: path.dirname(daemon),
       AGENTTRACEBACK_DATA_DIR: data,
       AGENTTRACEBACK_CONFIG_DIR: config,
       XDG_RUNTIME_DIR: runtime,

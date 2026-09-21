@@ -428,6 +428,53 @@ pub struct AdapterImportResponse {
     pub warnings: Vec<String>,
 }
 
+/// Progress for one agent in a background history import.
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryImportAgent {
+    /// Adapter identifier.
+    pub adapter_id: String,
+    /// Human-readable agent name.
+    pub display_name: String,
+    /// queued, running, completed, or failed.
+    pub status: String,
+    /// Sources fully processed.
+    pub sources: u64,
+    /// Sources discovered for this agent.
+    pub total_sources: u64,
+    /// Events accepted during this run.
+    pub events_imported: u64,
+    /// Records quarantined during this run.
+    pub quarantined: u64,
+    /// An actionable failure, when present.
+    pub error: Option<String>,
+}
+
+/// Daemon-owned import job; independent of a desktop request or page lifetime.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryImportStatus {
+    /// Unique job identifier, absent before the first run.
+    pub id: Option<String>,
+    /// idle, running, completed, or completed_with_errors.
+    pub status: String,
+    /// Per-agent progress and independent failures.
+    pub agents: Vec<HistoryImportAgent>,
+    /// Discovery or worker failure affecting the whole job.
+    pub error: Option<String>,
+}
+
+impl Default for HistoryImportStatus {
+    fn default() -> Self {
+        Self {
+            id: None,
+            status: "idle".into(),
+            agents: Vec::new(),
+            error: None,
+        }
+    }
+}
+
 /// Request to install one previously previewed hook plan.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -668,6 +715,16 @@ pub trait AdapterController: Send + Sync {
         &self,
         adapter_id: &str,
     ) -> Result<AdapterImportResponse, SessionControllerError>;
+    /// Starts one background import, or returns the already-running job.
+    async fn start_history_import(&self) -> Result<HistoryImportStatus, SessionControllerError> {
+        Err(SessionControllerError::not_found(
+            "Background history import is unavailable.",
+        ))
+    }
+    /// Returns the latest background import's progress.
+    async fn history_import_status(&self) -> Result<HistoryImportStatus, SessionControllerError> {
+        Ok(HistoryImportStatus::default())
+    }
     /// Returns the exact reversible configuration plan for one adapter.
     async fn plan_adapter_hook(
         &self,
@@ -796,6 +853,10 @@ pub fn router(state: ApiState) -> Router {
         .route("/api/v1/adapters", get(list_adapters))
         .route("/api/v1/adapters/scan", post(scan_adapters))
         .route("/api/v1/adapters/{id}/import", post(import_adapter))
+        .route(
+            "/api/v1/history/import",
+            get(history_import_status).post(start_history_import),
+        )
         .route("/api/v1/adapters/{id}/hooks/plan", post(plan_adapter_hook))
         .route(
             "/api/v1/adapters/{id}/hooks/install",
@@ -2376,6 +2437,26 @@ async fn import_adapter(
 ) -> Result<Json<AdapterImportResponse>, ApiError> {
     adapter_controller(&state)?
         .import_adapter(&adapter_id)
+        .await
+        .map(Json)
+        .map_err(ApiError::controller)
+}
+
+async fn start_history_import(
+    State(state): State<ApiState>,
+) -> Result<Json<HistoryImportStatus>, ApiError> {
+    adapter_controller(&state)?
+        .start_history_import()
+        .await
+        .map(Json)
+        .map_err(ApiError::controller)
+}
+
+async fn history_import_status(
+    State(state): State<ApiState>,
+) -> Result<Json<HistoryImportStatus>, ApiError> {
+    adapter_controller(&state)?
+        .history_import_status()
         .await
         .map(Json)
         .map_err(ApiError::controller)

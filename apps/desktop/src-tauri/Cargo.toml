@@ -21,6 +21,7 @@ agenttraceback-api.workspace = true
 agenttraceback-config.workspace = true
 agenttraceback-types.workspace = true
 reqwest.workspace = true
+rusqlite.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tauri.workspace = true

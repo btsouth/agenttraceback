@@ -5,7 +5,7 @@ mod event;
 pub use event::{
     AttributionConfidence, EventAction, EventActor, EventContent, EventEnvelope, EventEvidence,
     EventIntegrity, EventResult, EventRisk, EventSource, EventTarget, EventValidationError,
-    EvidenceClass, ResultStatus, RiskSeverity, SourceKind, TargetKind,
+    EvidenceClass, MAX_PREVIEW_BYTES, ResultStatus, RiskSeverity, SourceKind, TargetKind,
 };
 
 use std::{fmt, str::FromStr};

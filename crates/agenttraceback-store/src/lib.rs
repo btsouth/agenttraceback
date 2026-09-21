@@ -2700,6 +2700,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn changed_source_is_superseded_atomically_and_both_versions_verify() {
+        let (_directory, store) = test_store().await;
+        let original = test_event("changed-source");
+        let first = store.append_events(vec![original]).await.unwrap().remove(0);
+        let mut changed = test_event("changed-source");
+        changed.content.redacted_preview = Some("updated source content".into());
+        let second = store
+            .append_events(vec![changed.clone()])
+            .await
+            .unwrap()
+            .remove(0);
+        assert_ne!(first.id, second.id);
+        let replay = store.append_events(vec![changed]).await.unwrap().remove(0);
+        assert_eq!(second.id, replay.id);
+        assert_eq!(store.event_count().await.unwrap(), 2);
+        assert!(store.verify_chain(None).await.unwrap().is_valid());
+        let connection = rusqlite::Connection::open(store.database_path()).unwrap();
+        let live: i64 = connection
+            .query_row(
+                "SELECT COUNT(*) FROM event_sources WHERE superseded_by_event_id IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(live, 1);
+        store.close().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn changing_a_chain_row_is_detected() {
         let (directory, store) = test_store().await;
         let event = test_event("event-1");

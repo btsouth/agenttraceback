@@ -9,7 +9,7 @@ runs. It shows what an agent reported, what the host independently observed, wha
 changed, what was risky, and how to reconstruct earlier state safely. It is not a
 guard, blocker, or generic activity dashboard.
 
-> **Release status:** this repository is the public v0.1.0-alpha.3 development line. The
+> **Release status:** this repository is the public v0.1.0-alpha.4 development line. The
 > product UI, five semantic adapters, Command Code detection profile, encrypted
 > storage, recovery, redacted exports, demo dataset, installers, startup management,
 > and signed-update build hooks are implemented. Public `v0.1.0` remains gated on
@@ -59,12 +59,12 @@ Prebuilt installers are produced by the release workflow. Credentials are extern
 inputs; an unsigned development build is not presented as a production release.
 
 On Omarchy/Arch Linux x86_64, download the AppImage from the
-[alpha.3 release](https://github.com/btsouth/agenttraceback/releases/tag/v0.1.0-alpha.3),
+[alpha.4 release](https://github.com/btsouth/agenttraceback/releases/tag/v0.1.0-alpha.4),
 make it executable, and launch it:
 
 ```bash
-chmod +x ~/Downloads/AgentTraceback_0.1.0-alpha.3_amd64.AppImage
-~/Downloads/AgentTraceback_0.1.0-alpha.3_amd64.AppImage
+chmod +x ~/Downloads/AgentTraceback_0.1.0-alpha.4_amd64.AppImage
+~/Downloads/AgentTraceback_0.1.0-alpha.4_amd64.AppImage
 ```
 
 On the tested Omarchy machine with newer NVIDIA drivers, the bundled Wayland client
@@ -72,7 +72,7 @@ library conflicts with the host EGL driver. This per-launch override uses the sy
 Wayland client library and was verified to open the packaged desktop and start its daemon:
 
 ```bash
-LD_PRELOAD=/usr/lib/libwayland-client.so.0 ~/Downloads/AgentTraceback_0.1.0-alpha.3_amd64.AppImage
+LD_PRELOAD=/usr/lib/libwayland-client.so.0 ~/Downloads/AgentTraceback_0.1.0-alpha.4_amd64.AppImage
 ```
 
 This path is specific to Arch/Omarchy. It changes no system files. Alpha.1 desktop
@@ -93,8 +93,9 @@ signing, notarization, updater-key, installer, and startup-management details.
 
 ## Two-Minute Quick Start
 
-In the desktop app, follow onboarding, then choose **Import history** for past
-sessions or **Record session** for a new run. Choose your installed agent, browse
+In the desktop app, choose **Import history and open dashboard** to import all
+detected agents in the background. Browse sessions as they arrive; the daemon
+continues importing even if you close the window. Use **Record session** for a new run. Choose your installed agent, browse
 to your project folder, and click **Start recording in terminal**. The bundled CLI
 starts recording in your system terminal; no separate CLI installation is needed.
 Continue interacting with the agent there. Linux uses `xdg-terminal-exec` when

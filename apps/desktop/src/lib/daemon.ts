@@ -312,3 +312,12 @@ export function classifyDaemonState(
   if (isPending) return 'connecting';
   return data?.health.status === 'ok' ? 'connected' : 'unavailable';
 }
+
+export interface HistoryImportStatus {
+  id: string | null;
+  status: 'idle' | 'running' | 'completed' | 'completed_with_errors';
+  error: string | null;
+  agents: Array<{ adapterId: string; displayName: string; status: 'queued' | 'running' | 'completed' | 'failed'; sources: number; totalSources: number; eventsImported: number; quarantined: number; error: string | null }>;
+}
+export const loadHistoryImport = () => invoke<HistoryImportStatus>('history_import_status');
+export const startHistoryImport = () => invoke<HistoryImportStatus>('start_history_import');

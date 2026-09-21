@@ -9,8 +9,8 @@ use std::{
 use agenttraceback_api::{
     AdapterImportResponse, AdapterScanResponse, CapabilitiesResponse, DashboardView,
     ExecuteRecoveryRequest, ExportRequest, ExportView, FileSummary, FindingSummary, HealthResponse,
-    PlanRecoveryRequest, RecoveryPlanView, RecoveryRunView, SearchResponse, SessionFileChange,
-    SessionView,
+    HistoryImportStatus, PlanRecoveryRequest, RecoveryPlanView, RecoveryRunView, SearchResponse,
+    SessionFileChange, SessionView,
 };
 use agenttraceback_config::PlatformPaths;
 use agenttraceback_types::{EventEnvelope, RuntimeMetadata};
@@ -20,6 +20,8 @@ use tauri_plugin_clipboard_manager::ClipboardExt;
 use tauri_plugin_dialog::DialogExt;
 
 mod launch;
+
+static DAEMON_UPGRADE: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 #[tauri::command]
 async fn pick_project_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
@@ -239,7 +241,7 @@ async fn search_history(
         .query(&[("q", query), ("limit", limit.unwrap_or(100).to_string())])
         .send()
         .await
-        .map_err(|error| format!("local API request failed: {error}"))?;
+        .map_err(local_request_error)?;
     decode_response(response).await
 }
 
@@ -261,6 +263,39 @@ async fn import_adapter(
         &format!("/api/v1/adapters/{adapter_id}/import"),
         &runtime.token,
         &serde_json::json!({}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn start_history_import(
+    state: State<'_, DesktopState>,
+) -> Result<HistoryImportStatus, String> {
+    upgrade_history_daemon(&state).await?;
+    let (runtime, base_url) = daemon_endpoint(&state).await?;
+    post_json(
+        &state.client,
+        &base_url,
+        "/api/v1/history/import",
+        &runtime.token,
+        &serde_json::json!({}),
+    )
+    .await
+}
+
+#[tauri::command]
+async fn history_import_status(
+    state: State<'_, DesktopState>,
+) -> Result<HistoryImportStatus, String> {
+    let (runtime, base_url) = daemon_endpoint(&state).await?;
+    if legacy_history_daemon(&runtime.daemon_version) {
+        return Ok(HistoryImportStatus::default());
+    }
+    get_json(
+        &state.client,
+        &base_url,
+        "/api/v1/history/import",
+        &runtime.token,
     )
     .await
 }
@@ -315,7 +350,7 @@ async fn get_json<T: serde::de::DeserializeOwned>(
         .bearer_auth(token)
         .send()
         .await
-        .map_err(|error| format!("local API request failed: {error}"))?;
+        .map_err(local_request_error)?;
     decode_response(response).await
 }
 
@@ -336,8 +371,21 @@ where
         .json(body)
         .send()
         .await
-        .map_err(|error| format!("local API request failed: {error}"))?;
+        .map_err(local_request_error)?;
     decode_response(response).await
+}
+
+fn local_request_error(error: reqwest::Error) -> String {
+    if error.is_timeout() {
+        "The background service took too long to respond. Import progress will reconnect automatically.".into()
+    } else if error.is_connect() {
+        "Could not connect to the background service. Try again while it restarts.".into()
+    } else {
+        format!(
+            "The background service request failed: {}",
+            error.without_url()
+        )
+    }
 }
 
 async fn decode_response<T: serde::de::DeserializeOwned>(
@@ -352,6 +400,81 @@ async fn decode_response<T: serde::de::DeserializeOwned>(
         return Err(format!("local API returned HTTP {status}: {body}"));
     }
     serde_json::from_str(&body).map_err(|error| format!("invalid local API response: {error}"))
+}
+
+fn legacy_history_daemon(version: &str) -> bool {
+    matches!(version, "0.1.0-alpha.1" | "0.1.0-alpha.2" | "0.1.0-alpha.3")
+}
+
+fn recording_is_active(database: &Path) -> Result<bool, String> {
+    let connection = rusqlite::Connection::open_with_flags(
+        database,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+    )
+    .map_err(|error| {
+        format!("Could not check recording state before updating the background service: {error}")
+    })?;
+    connection
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM sessions WHERE state = 'active')",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())
+}
+
+async fn upgrade_history_daemon(state: &DesktopState) -> Result<(), String> {
+    let _guard = DAEMON_UPGRADE.lock().await;
+    let runtime = ensure_daemon(&state.paths, &state.client).await?;
+    if !legacy_history_daemon(&runtime.daemon_version) {
+        return Ok(());
+    }
+    let database = state.paths.database_file.clone();
+    let active = tauri::async_runtime::spawn_blocking(move || recording_is_active(&database))
+        .await
+        .map_err(|error| error.to_string())??;
+    if active {
+        return Err("Finish the active recorded run before updating the background service for history import.".into());
+    }
+    let cli = std::env::current_exe()
+        .map_err(|error| error.to_string())?
+        .with_file_name(if cfg!(windows) {
+            "agenttraceback.exe"
+        } else {
+            "agenttraceback"
+        });
+    let stopped = tauri::async_runtime::spawn_blocking(move || {
+        Command::new(cli)
+            .args(["daemon", "stop"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())?;
+    if !stopped.success() {
+        return Err("Could not update the background service. Try importing again.".into());
+    }
+    for _ in 0..300 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        if state.paths.read_runtime_metadata().is_err()
+            || !health_reachable(&state.client, &runtime).await
+        {
+            // Graceful shutdown keeps its lock until outstanding requests finish.
+            // Wait for process exit before starting the new daemon.
+            if state.paths.read_runtime_metadata().is_err() {
+                break;
+            }
+            #[cfg(windows)]
+            break;
+        }
+    }
+    let updated = ensure_daemon(&state.paths, &state.client).await?;
+    if legacy_history_daemon(&updated.daemon_version) {
+        return Err("The previous background service is still finishing work. Try importing again in a moment.".into());
+    }
+    Ok(())
 }
 
 async fn ensure_daemon(
@@ -409,7 +532,7 @@ async fn fetch_json<T: serde::de::DeserializeOwned>(
         .bearer_auth(token)
         .send()
         .await
-        .map_err(|error| format!("local API request failed: {error}"))?;
+        .map_err(local_request_error)?;
     let status = response.status();
     let body = response
         .text()
@@ -504,6 +627,8 @@ pub fn run() {
             search_history,
             adapters,
             import_adapter,
+            start_history_import,
+            history_import_status,
             plan_recovery,
             execute_recovery,
         ])
@@ -515,7 +640,30 @@ pub fn run() {
 mod tests {
     use std::path::Path;
 
-    use super::{sibling_daemon_path, updater_is_configured};
+    use super::{
+        legacy_history_daemon, recording_is_active, sibling_daemon_path, updater_is_configured,
+    };
+
+    #[test]
+    fn background_service_upgrade_checks_recordings_without_writing_the_database() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("db");
+        assert!(recording_is_active(&path).is_err());
+        assert!(!path.exists());
+        let connection = rusqlite::Connection::open(&path).unwrap();
+        connection
+            .execute_batch(
+                "CREATE TABLE sessions(state TEXT); INSERT INTO sessions VALUES('imported');",
+            )
+            .unwrap();
+        assert!(!recording_is_active(&path).unwrap());
+        connection
+            .execute("INSERT INTO sessions VALUES('active')", [])
+            .unwrap();
+        assert!(recording_is_active(&path).unwrap());
+        assert!(legacy_history_daemon("0.1.0-alpha.3"));
+        assert!(!legacy_history_daemon("0.1.0-alpha.4"));
+    }
 
     #[test]
     fn updater_is_optional_for_unsigned_desktop_builds() {

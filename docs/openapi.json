@@ -382,6 +382,24 @@
           }
         }
       }
+    },
+    "/api/v1/history/import": {
+      "get": {
+        "summary": "Get daemon-owned background history import progress",
+        "responses": {
+          "200": {
+            "description": "Current import progress"
+          }
+        }
+      },
+      "post": {
+        "summary": "Start background import for all detected agents or return the running job",
+        "responses": {
+          "200": {
+            "description": "Import queued without waiting for history processing"
+          }
+        }
+      }
     }
   },
   "components": {

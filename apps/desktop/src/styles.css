@@ -630,3 +630,11 @@ kbd { padding: 2px 5px; border: 1px solid var(--border); border-radius: 5px; bac
 .text-context-menu button:hover:not(:disabled), .text-context-menu button:focus-visible { background: var(--panel-raised); outline: 2px solid var(--accent); }
 .text-context-menu button:disabled { opacity: .4; }
 .clipboard-error { position: fixed; bottom: 20px; right: 20px; max-width: 420px; z-index: 10001; padding: 16px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; }
+
+.history-import-header { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.history-import p { font-size: 13px; color: var(--text-secondary); line-height: 1.6; }
+.history-import summary { cursor: pointer; font-size: 12px; margin-top: 16px; }
+.import-progress-list { list-style: none; padding: 0; margin: 12px 0 0; }
+.import-progress-list li { display: grid; grid-template-columns: 1fr 2fr; gap: 8px; border-top: 1px solid var(--border); padding: 10px 0; font-size: 12px; }
+.import-progress-list li p { grid-column: 1 / -1; overflow-wrap: anywhere; margin: 0; }
+@media (max-width: 700px) { .history-import-header { flex-direction: column; align-items: stretch; } }

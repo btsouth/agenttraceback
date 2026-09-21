@@ -191,6 +191,19 @@ async fn import_source(
         .unwrap_or("codex-session")
         .to_owned();
     let mut fallback_project_root = None;
+    if cursor.byte_offset > 0 {
+        // The session header occurs only at the start of a rollout. Restore its
+        // identity when resuming a later batch so one rollout stays one session.
+        for header in read_jsonl(&source.canonical_location, 0, 1).await?.records {
+            if header.value.get("type").and_then(Value::as_str) == Some("session_meta") {
+                if let Some(id) = string_at(&header.value, &["payload", "id"]) {
+                    fallback_session_id = id.to_owned();
+                }
+                fallback_project_root =
+                    string_at(&header.value, &["payload", "cwd"]).map(PathBuf::from);
+            }
+        }
+    }
     for record in batch.records {
         if let Some(event) = parse_event(
             &record.value,
@@ -242,7 +255,10 @@ fn parse_event(
     let timestamp = timestamp_us(string_at(value, &["timestamp"]));
     let record_type = string_at(value, &["type"]).unwrap_or_default();
     let payload = value.get("payload").unwrap_or(value);
-    let native_session_id = string_at(payload, &["id"])
+    // Message/tool IDs are not session IDs. Only the rollout header owns `id`.
+    let native_session_id = (record_type == "session_meta")
+        .then(|| string_at(payload, &["id"]))
+        .flatten()
         .or_else(|| string_at(payload, &["session_id"]))
         .or_else(|| string_at(value, &["session_id"]))
         .unwrap_or(fallback_native_session_id)

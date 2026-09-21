@@ -254,12 +254,6 @@ fn append_events(
                 Some(existing.event_id),
                 &mut chain_cursors,
             )?;
-            transaction
-                .execute(
-                    "UPDATE event_sources SET superseded_by_event_id = ?1 WHERE id = ?2",
-                    rusqlite::params![id_blob(stored.id), existing.source_row_id],
-                )
-                .map_err(StoreError::Sqlite)?;
             persisted.push(stored);
             continue;
         }
@@ -276,7 +270,6 @@ fn append_events(
 
 struct ExistingSource {
     event_id: EntityId,
-    source_row_id: Vec<u8>,
     envelope: EventEnvelope,
 }
 
@@ -286,7 +279,7 @@ fn find_existing_source(
 ) -> StoreResult<Option<ExistingSource>> {
     let row = transaction
         .query_row(
-            "SELECT e.id, s.id, e.envelope_json
+            "SELECT e.id, e.envelope_json
              FROM event_sources s
              JOIN events e ON e.id = s.event_id
              WHERE s.source_kind = ?1
@@ -299,21 +292,14 @@ fn find_existing_source(
                 event.source.adapter_id.as_deref().unwrap_or(""),
                 event.source.source_event_id
             ],
-            |row| {
-                Ok((
-                    row.get::<_, Vec<u8>>(0)?,
-                    row.get::<_, Vec<u8>>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            },
+            |row| Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, String>(1)?)),
         )
         .optional()
         .map_err(StoreError::Sqlite)?;
 
-    row.map(|(event_id, source_row_id, envelope_json)| {
+    row.map(|(event_id, envelope_json)| {
         Ok(ExistingSource {
             event_id: uuid_from_blob(&event_id)?,
-            source_row_id,
             envelope: serde_json::from_str(&envelope_json).map_err(StoreError::EnvelopeJson)?,
         })
     })
@@ -405,6 +391,16 @@ fn persist_new_event(
             },
         )
         .map_err(StoreError::Sqlite)?;
+
+    // The new event must exist for the foreign key, and the previous source
+    // must cease being live before inserting its replacement into the unique
+    // live-source index. Both changes stay in the same transaction.
+    if let Some(previous) = supersedes_event_id {
+        transaction.execute(
+            "UPDATE event_sources SET superseded_by_event_id = ?1 WHERE event_id = ?2 AND superseded_by_event_id IS NULL",
+            rusqlite::params![id_blob(event.id), id_blob(previous)],
+        ).map_err(StoreError::Sqlite)?;
+    }
 
     transaction
         .execute(
@@ -1424,6 +1420,8 @@ fn source_identity_value(event: &EventEnvelope) -> StoreResult<EventEnvelope> {
     comparable.id = EntityId::nil();
     comparable.observed_at_us = 0;
     comparable.monotonic_ns = None;
+    // Finding IDs are generated during ingestion, not supplied by the source.
+    comparable.risk.finding_ids.clear();
     Ok(comparable)
 }
 

@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useRef, useState, type ReactNode } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { check } from '@tauri-apps/plugin-updater';
 import {
   Activity,
@@ -34,7 +34,6 @@ import {
   classifyDaemonState,
   executeRecovery,
   exportSession,
-  importAdapter,
   loadAdapters,
   loadDaemonSnapshot,
   loadDashboard,
@@ -52,6 +51,8 @@ import {
   type SessionFileChange,
   type SessionView,
 } from './lib/daemon';
+import { HistoryImport } from './HistoryImport';
+import { useHistoryImport } from './lib/history';
 import { SessionLauncher } from './SessionLauncher';
 import { useThemeStore } from './lib/theme';
 
@@ -217,6 +218,7 @@ export function App() {
         </header>
 
         {launcherOpen ? <SessionLauncher /> : null}
+        {screen === 'live' ? <HistoryImport /> : null}
 
         {snapshot.isError || dashboard.isError ? (
           <ErrorPanel
@@ -280,6 +282,7 @@ export function App() {
 
 function Onboarding({ onComplete }: { onComplete: () => void }) {
   const adapters = useQuery({ queryKey: ['adapters'], queryFn: loadAdapters });
+  const history = useHistoryImport();
   const [step, setStep] = useState(() => {
     const parsed = Number(window.localStorage.getItem('agenttraceback.onboarding.step') ?? '0');
     return Number.isFinite(parsed) ? Math.min(Math.max(parsed, 0), 3) : 0;
@@ -344,7 +347,7 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
             <h1>How capture works</h1>
             <p>Next, import existing history or launch a recorded run in your normal terminal.</p>
             <dl className="capture-summary">
-              <CaptureDetail title="Historical import" detail="Import existing sessions on the next page or later in Settings." />
+              <CaptureDetail title="Historical import" detail="All detected agents import together in the background." />
               <CaptureDetail title="Live sessions" detail="Choose your agent and project, then start recording in your terminal." />
               <CaptureDetail title="Optional agent hooks" detail="Require a separate approval step before installation." />
               <CaptureDetail title="Terminal transcripts" detail="Choose whether to save an encrypted transcript when launching a run." />
@@ -360,11 +363,11 @@ function Onboarding({ onComplete }: { onComplete: () => void }) {
           <>
             <span className="panel-kicker">READY</span>
             <h1>Your local history is ready to grow</h1>
-            <p>Import past sessions here, or start a new recorded run. Neither is required to explore the dashboard.</p>
-            <HistoryImport />
-            <SessionLauncher />
+            <p>Open the dashboard to bring your existing agent history together. Sessions appear as they are imported.</p>
+            <HistoryImport intro />
             <div className="onboarding-actions">
-              <button className="primary-button" type="button" onClick={finish}>Open dashboard <ChevronRight size={16} /></button>
+              <button className="primary-button" type="button" onClick={() => { history.start.mutate(); finish(); }}>Import history and open dashboard <ChevronRight size={16} /></button>
+              <button className="ghost-button" type="button" onClick={finish}>Skip import for now</button>
             </div>
           </>
         ) : null}
@@ -783,46 +786,18 @@ function FindingsScreen({ findings, sessions, onOpenSession }: { findings: Findi
   );
 }
 
-function HistoryImport() {
-  const client = useQueryClient();
-  const adapters = useQuery({ queryKey: ['adapters'], queryFn: loadAdapters });
-  const mutation = useMutation({ mutationFn: importAdapter, onSuccess: () => {
-    void client.invalidateQueries({ queryKey: ['dashboard'] });
-    void client.invalidateQueries({ queryKey: ['adapters'] });
-  } });
-  const available = (adapters.data?.adapters ?? []).filter((adapter) => adapter.capabilities.some((capability) => capability.name === 'historical_sessions' && capability.availability === 'available'));
-  return <section className="history-import" aria-label="Import existing history">
-    <h2>Import existing history</h2><p>Read past sessions from detected agents. No terminal command needed.</p>
-    {adapters.isPending ? <LoadingPanel label="Looking for history" /> : null}
-    {adapters.isError ? <ErrorPanel title="Could not find agent history" detail={errorText(adapters.error)} retry={() => void adapters.refetch()} compact /> : null}
-    {adapters.isSuccess && !available.length ? <p>No importable history found. You can rescan in Settings after using an agent.</p> : null}
-    <div className="onboarding-actions">{available.map((adapter) => <button className="ghost-button" type="button" key={adapter.id} disabled={mutation.isPending} onClick={() => mutation.mutate(adapter.id)}>{mutation.isPending && mutation.variables === adapter.id ? 'Importing…' : `Import ${adapter.displayName} history`}</button>)}</div>
-    {mutation.data ? <p role="status" className="success-copy">Imported {mutation.data.eventsImported} events from {mutation.data.sources} sources; {mutation.data.quarantined} quarantined.</p> : null}
-    {mutation.isError ? <p role="alert" className="launch-error">Import failed: {errorText(mutation.error)}</p> : null}
-  </section>;
-}
-
 function SettingsScreen() {
-  const queryClient = useQueryClient();
   const [updateMessage, setUpdateMessage] = useState<string | null>(null);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const adapters = useQuery({ queryKey: ['adapters'], queryFn: loadAdapters });
-  const importMutation = useMutation({
-    mutationFn: (adapterId: string) => importAdapter(adapterId),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      void queryClient.invalidateQueries({ queryKey: ['adapters'] });
-    },
-  });
   return (
     <div className="settings-grid">
       <section className="panel settings-section">
         <PanelHeading kicker="AGENTS" title="Detected installations" action={<button className="ghost-button" type="button" onClick={() => void adapters.refetch()}><RefreshCw size={14} /> Rescan</button>} />
         {adapters.isPending ? <LoadingPanel label="Scanning adapters" /> : null}
         {adapters.isError ? <ErrorPanel title="Adapter scan failed" detail={errorText(adapters.error)} retry={() => void adapters.refetch()} compact /> : null}
-        <div className="adapter-grid settings-adapters">{(adapters.data?.adapters ?? []).map((adapter) => <AdapterCard adapter={adapter} key={adapter.id} onImport={adapter.capabilities.some((capability) => capability.name === 'historical_sessions' && capability.availability === 'available') ? () => importMutation.mutate(adapter.id) : undefined} importing={importMutation.isPending && importMutation.variables === adapter.id} />)}</div>
-        {importMutation.data ? <p className="success-copy">Imported {importMutation.data.eventsImported} events from {importMutation.data.sources} sources; {importMutation.data.quarantined} quarantined.</p> : null}
-        {importMutation.isError ? <ErrorPanel title="Import failed" detail={errorText(importMutation.error)} retry={() => importMutation.mutate(importMutation.variables ?? '')} compact /> : null}
+        <HistoryImport />
+        <div className="adapter-grid settings-adapters">{(adapters.data?.adapters ?? []).map((adapter) => <AdapterCard adapter={adapter} key={adapter.id} />)}</div>
       </section>
       <section className="panel settings-section">
         <PanelHeading kicker="PRIVACY" title="Local data boundary" />

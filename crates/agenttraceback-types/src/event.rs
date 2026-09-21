@@ -3,7 +3,8 @@ use thiserror::Error;
 
 use crate::{EVENT_SCHEMA_VERSION, EntityId};
 
-const MAX_PREVIEW_BYTES: usize = 64 * 1024;
+/// Maximum UTF-8 bytes in a persisted, search-safe event preview.
+pub const MAX_PREVIEW_BYTES: usize = 64 * 1024;
 const MAX_ID_BYTES: usize = 512;
 
 /// A normalized event action.

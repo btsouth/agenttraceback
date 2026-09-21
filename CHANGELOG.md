@@ -3,6 +3,29 @@
 All notable changes are documented here. AgentTraceback follows Semantic Versioning after
 the first public release.
 
+## 0.1.0-alpha.4 — 2026-09-20
+
+### Fixed
+
+- Import all detected history with one action, then use the dashboard while the
+  daemon processes it. Progress survives page changes and closing the desktop.
+- Move long imports out of the desktop's five-second HTTP request deadline.
+- Bound long UTF-8 display previews after redaction while preserving the full
+  encrypted payload, so large messages do not block the rest of a history file.
+- Drain JSONL and SQLite batches, persist cursors between batches, and preserve Codex
+  session identity when resuming long rollout files. Message IDs no longer create
+  separate Codex sessions.
+- Continue other sources and agents when one source cannot be read; show progress
+  and independent errors together, with one retry action.
+- Update legacy background services from the desktop before starting an import,
+  while refusing to interrupt an active recorded run.
+- Preserve source timestamps for imported sessions and checkpoint actual persisted
+  event IDs when resuming an interrupted batch.
+- Fix atomic replacement of changed source events and deduplicate regenerated risk
+  finding IDs when replaying a partially imported batch.
+- Test onboarding imports against a real daemon and isolated agent-history fixtures,
+  including histories larger than one batch and reconnecting to job progress.
+
 ## 0.1.0-alpha.3 — 2026-09-20
 
 ### Added

@@ -1046,6 +1046,11 @@ async fn adapters(json: bool, command: AdaptersCommand) -> Result<(), CliError> 
             print_adapters(json, &response)?;
         }
         AdaptersCommand::Import { adapter_id } => {
+            // A terminal import waits for all batches; only connecting has a
+            // deadline. Desktop imports use the background job API instead.
+            let client = reqwest::Client::builder()
+                .connect_timeout(Duration::from_secs(5))
+                .build()?;
             let response: AdapterImportResponse = post_json(
                 &client,
                 &base_url,
