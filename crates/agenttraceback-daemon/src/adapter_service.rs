@@ -860,7 +860,15 @@ mod tests {
         );
         // Simulate a crash after event persistence but before the cursor checkpoint.
         let connection = rusqlite::Connection::open(store.database_path()).unwrap();
-        connection.execute("UPDATE import_cursors SET byte_offset = 0, native_cursor = NULL, last_event_id = NULL WHERE import_source_id IN (SELECT id FROM import_sources WHERE canonical_location = ?1)", [home.join(".claude/projects/long.jsonl").to_string_lossy().as_ref()]).unwrap();
+        let rewound = connection.execute(
+            "UPDATE import_cursors SET byte_offset = 0, native_cursor = NULL, last_event_id = NULL
+             WHERE import_source_id IN (
+                 SELECT sources.id FROM import_sources sources
+                 JOIN adapter_installations installations ON installations.id = sources.adapter_installation_id
+                 WHERE installations.adapter_id = 'claude-code')",
+            [],
+        ).unwrap();
+        assert_eq!(rewound, 1, "the fixture cursor must actually be rewound");
         assert_eq!(
             service
                 .import_adapter("claude-code")
