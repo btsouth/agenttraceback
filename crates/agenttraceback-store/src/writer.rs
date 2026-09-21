@@ -679,6 +679,7 @@ fn upsert_session(connection: &Connection, session: SessionRecord) -> StoreResul
                 project_id = COALESCE(excluded.project_id, sessions.project_id),
                 title_preview = COALESCE(excluded.title_preview, sessions.title_preview),
                 state = CASE WHEN sessions.state IN ('complete', 'archived')
+                                  OR (sessions.state = 'active' AND excluded.state = 'imported')
                              THEN sessions.state ELSE excluded.state END,
                 started_at_us = MIN(sessions.started_at_us, excluded.started_at_us),
                 ended_at_us = COALESCE(excluded.ended_at_us, sessions.ended_at_us),

@@ -14,7 +14,8 @@ the first public release.
   encrypted payload, so large messages do not block the rest of a history file.
 - Drain JSONL and SQLite batches, persist cursors between batches, and preserve Codex
   session identity when resuming long rollout files. Message IDs no longer create
-  separate Codex sessions.
+  separate Codex sessions. Distinct native sessions in the same project no longer
+  merge by timestamp, and imports preserve an active wrapper session’s state.
 - Continue other sources and agents when one source cannot be read; show progress
   and independent errors together, with one retry action.
 - Update legacy background services from the desktop before starting an import,

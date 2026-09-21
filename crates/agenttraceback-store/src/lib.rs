@@ -1381,15 +1381,17 @@ impl Store {
         .await?
     }
 
-    /// Finds a recent wrapper session that likely owns a native agent session.
+    /// Finds the same native session, or an unassigned recent wrapper session.
     pub async fn find_session_for_native_import(
         &self,
         project_id: EntityId,
         agent_name: &str,
         occurred_at_us: i64,
+        native_session_id: &str,
     ) -> StoreResult<Option<EntityId>> {
         let readers = self.inner.readers.clone();
         let agent_name = agent_name.to_owned();
+        let native_session_id = native_session_id.to_owned();
         tokio::task::spawn_blocking(move || {
             let connection = readers.connection()?;
             let connection = lock_reader(&connection)?;
@@ -1398,14 +1400,19 @@ impl Store {
                     "SELECT id FROM sessions
                      WHERE project_id = ?1
                        AND lower(COALESCE(agent_name, '')) = lower(?2)
-                       AND started_at_us <= ?3
-                       AND COALESCE(ended_at_us, ?3) >= ?4
-                     ORDER BY started_at_us DESC LIMIT 1",
+                       AND (source_session_id = ?5 OR (
+                            source_session_id IS NULL
+                            AND capture_health != 'historical_import'
+                            AND started_at_us <= ?3
+                            AND COALESCE(ended_at_us, ?3) >= ?4))
+                     ORDER BY CASE WHEN source_session_id = ?5 THEN 0 ELSE 1 END,
+                              started_at_us DESC LIMIT 1",
                     rusqlite::params![
                         project_id.as_uuid().as_bytes().as_slice(),
                         agent_name,
                         occurred_at_us.saturating_add(3_600_000_000),
                         occurred_at_us.saturating_sub(3_600_000_000),
+                        native_session_id,
                     ],
                     |row| row.get::<_, Vec<u8>>(0),
                 )

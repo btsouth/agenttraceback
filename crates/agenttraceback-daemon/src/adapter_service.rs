@@ -592,7 +592,12 @@ impl PersistentAdapterSink {
         };
         let session_id = if let Some(project_id) = project_id {
             self.store
-                .find_session_for_native_import(project_id, &metadata.agent_name, occurred_at_us)
+                .find_session_for_native_import(
+                    project_id,
+                    &metadata.agent_name,
+                    occurred_at_us,
+                    &metadata.native_session_id,
+                )
                 .await
                 .map_err(store_to_adapter_error)?
                 .unwrap_or(fallback_session_id)
@@ -873,6 +878,73 @@ mod tests {
                 .unwrap()
                 .events_imported,
             0
+        );
+        drop(connection);
+        pipeline.close().await.unwrap();
+        store.close().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn histories_in_the_same_project_keep_distinct_native_sessions() {
+        let directory = tempfile::tempdir().unwrap();
+        let store = Store::open(
+            directory.path().join("db"),
+            directory.path().join("backups"),
+        )
+        .await
+        .unwrap();
+        let key = MasterKey::generate();
+        let blobs = BlobStore::open(
+            directory.path().join("blobs"),
+            BlobCipher::from_master_key(&key).unwrap(),
+        )
+        .unwrap();
+        let pipeline = Arc::new(IngestionPipeline::start(
+            store.clone(),
+            blobs,
+            key,
+            IngestionConfig::default(),
+        ));
+        let metadata = |id: &str| AdapterSessionMetadata {
+            native_session_id: id.into(),
+            project_root: Some(directory.path().to_path_buf()),
+            title_preview: None,
+            agent_name: "codex".into(),
+            harness_name: None,
+            provider_name: None,
+            model_name: None,
+            historical: true,
+        };
+        let first = PersistentAdapterSink::new(store.clone(), pipeline.clone())
+            .ensure_session(EntityId::new(), &metadata("first"), 1_789_900_800_000_000)
+            .await
+            .unwrap();
+        let second = PersistentAdapterSink::new(store.clone(), pipeline.clone())
+            .ensure_session(EntityId::new(), &metadata("second"), 1_789_900_801_000_000)
+            .await
+            .unwrap();
+        assert_ne!(first, second);
+        let connection = rusqlite::Connection::open(store.database_path()).unwrap();
+        connection
+            .execute(
+                "UPDATE sessions SET state = 'active' WHERE id = ?1",
+                [first.as_uuid().as_bytes().as_slice()],
+            )
+            .unwrap();
+        let replay = PersistentAdapterSink::new(store.clone(), pipeline.clone())
+            .ensure_session(EntityId::new(), &metadata("first"), 1_789_900_802_000_000)
+            .await
+            .unwrap();
+        assert_eq!(first, replay);
+        assert_eq!(store.list_sessions(100).await.unwrap().len(), 2);
+        assert_eq!(
+            store
+                .get_session_summary(first)
+                .await
+                .unwrap()
+                .unwrap()
+                .state,
+            "active"
         );
         drop(connection);
         pipeline.close().await.unwrap();
