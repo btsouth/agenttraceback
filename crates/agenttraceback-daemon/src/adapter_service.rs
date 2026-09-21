@@ -805,7 +805,10 @@ mod tests {
             "running"
         );
         drop(gate);
-        let status = tokio::time::timeout(std::time::Duration::from_secs(60), async {
+        // This drains thousands of encrypted files and durable database writes.
+        // Windows CI storage can take minutes; the separate 200 ms assertion
+        // above checks responsiveness without imposing a throughput requirement.
+        let status = tokio::time::timeout(std::time::Duration::from_secs(300), async {
             loop {
                 let status = service.history_import_status().await.unwrap();
                 if status.status != "running" {
